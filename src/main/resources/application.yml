@@ -11,6 +11,10 @@ spring:
   mvc:
     path-match:
       matching-strategy: ant_path_matcher
+  servlet:
+    multipart:
+      max-file-size: 10MB # 单个上传⽂件⼤⼩限定为10M
+      max-request-size: 100MB # 单次上传⽂件⼤⼩限定为100M
 
 mybatis-plus:
   mapper-locations: classpath:/mapper/*Mapper.xml
@@ -69,7 +73,7 @@ share:
     ccp:
       serverIp: app.cloopen.com
       port: 8883
-      accountSId: accountSid
-      accountToken: accountToken
-      appId: appId
+      accountSId: 2c94811c9035ff9f0192adc3c9217d46
+      accountToken: b45e565c34a844d3848b0f86a88c5a25
+      appId: 2c94811c9035ff9f0192adc3ca9a7d4d
       templateId: 1
