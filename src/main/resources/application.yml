@@ -1,0 +1,75 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /community-app-api
+
+spring:
+  application:
+    name: community-app-backend
+  profiles:
+    active: dev
+  mvc:
+    path-match:
+      matching-strategy: ant_path_matcher
+
+mybatis-plus:
+  mapper-locations: classpath:/mapper/*Mapper.xml
+  type-aliases-package: top.xym.*.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-field: true
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  config: classpath:log/logback-spring.xml
+
+# springdoc-openapi
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: top.xym.community.app.controller
+
+# knife4j
+knife4j:
+  enable: true
+  setting:
+    language: zh_cn
+  basic:
+    enable: true
+    username: admin
+    password: 123456
+
+auth:
+valid_urls:
+  - /auth/logout
+  - /user/**
+  - /resource/publish
+
+aliyun:
+  oss:
+    endpoint: oss-cn-nanjing.aliyuncs.com
+    accessKeyId: LTAI5tQnFUmsUb2gMFdE7W2d
+    accessKeySecret: McFDTO4w3onWHaSBjKSnFr05IfQShq
+    bucketName: mxy-u
+
+share:
+  sms:
+    ccp:
+      serverIp: app.cloopen.com
+      port: 8883
+      accountSId: accountSid
+      accountToken: accountToken
+      appId: appId
+      templateId: 1
