@@ -56,10 +56,10 @@ knife4j:
     password: 123456
 
 auth:
-valid_urls:
-  - /auth/logout
-  - /user/**
-  - /resource/publish
+  valid_urls:
+    - /auth/logout
+    - /user/**
+    - /resource/publish
 
 aliyun:
   oss:
