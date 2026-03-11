@@ -4,10 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import top.xym.community.app.common.result.Result;
+import top.xym.community.app.model.dto.UserEditDTO;
 import top.xym.community.app.model.vo.UserInfoVO;
 import top.xym.community.app.service.UserService;
 
@@ -25,4 +24,9 @@ public class UserController {
         return Result.ok(userService.userInfo());
     }
 
+    @PostMapping("update")
+    @Operation(summary = "修改用户信息")
+    public Result<UserInfoVO> update(@RequestBody UserEditDTO userEditDTO) {
+        return Result.ok(userService.updateInfo(userEditDTO));
+    }
 }

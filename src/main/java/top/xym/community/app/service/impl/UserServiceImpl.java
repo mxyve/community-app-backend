@@ -1,6 +1,7 @@
 package top.xym.community.app.service.impl;
 
 
+import cn.hutool.system.UserInfo;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import top.xym.community.app.common.exception.ErrorCode;
 import top.xym.community.app.common.exception.ServerException;
 import top.xym.community.app.convert.UserConvert;
 import top.xym.community.app.mapper.UserMapper;
+import top.xym.community.app.model.dto.UserEditDTO;
 import top.xym.community.app.model.entity.User;
 import top.xym.community.app.model.vo.UserInfoVO;
 import top.xym.community.app.service.UserService;
@@ -31,4 +33,23 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         UserInfoVO userInfoVO = UserConvert.INSTANCE.convert(user);
         return userInfoVO;
     }
+
+    @Override
+    public UserInfoVO updateInfo(UserEditDTO userEditDTO) {
+        Integer userId = RequestContext.getUserId();
+        userEditDTO.setUserId(userId);
+        User user = UserConvert.INSTANCE.convert((userEditDTO));
+        if (user.getUserId() == null) {
+            throw new ServerException(ErrorCode.PARAMS_ERROR);
+        }
+        try {
+            if (baseMapper.updateById(user) < 1) {
+                throw new ServerException("修改失败");
+            }
+        } catch(Exception e) {
+            throw new ServerException((e.getMessage()));
+        }
+        return this.userInfo();
+    }
+
 }

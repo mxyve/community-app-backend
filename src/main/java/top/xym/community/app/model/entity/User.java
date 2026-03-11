@@ -41,9 +41,17 @@ public class User {
     @TableLogic
     private Integer deleted;
 
-    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
+    @TableField(value = "create_time", fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
-    @TableField(value = "create_time", fill = FieldFill.INSERT)
+    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
+
+    private String province;
+
+    private String city;
+
+    private String district;
+
+    private Integer tenantId;
 }
