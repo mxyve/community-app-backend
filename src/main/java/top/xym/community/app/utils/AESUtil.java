@@ -9,7 +9,7 @@ import java.security.spec.AlgorithmParameterSpec;
 
 public class AESUtil {
 
-    private static final String CIPHER_ALGORITHM = "AES/CBC?PKCS5Padding";
+    private static final String CIPHER_ALGORITHM = "AES/CBC/PKCS5Padding";
     private static final String CHARSET_NAME = "UTF-8";
     private static final String AES_NAME = "AES";
 
