@@ -6,6 +6,7 @@ import lombok.Getter;
 @Getter
 @AllArgsConstructor
 public enum ErrorCode {
+    SUCCESS(200, "操作成功"),
     UNAUTHORIZED(401, "还未授权，不能访问"),
     FORBIDDEN(403,"没有权限，禁止访问"),
     INTERNAL_SERVER_ERROR(500, "服务器异常，请稍后再试"),

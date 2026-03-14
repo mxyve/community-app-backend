@@ -1,11 +1,15 @@
 package top.xym.community.app.common.result;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import top.xym.community.app.common.exception.ErrorCode;
 
 @Data
 @Schema(name = "响应数据")
+@NoArgsConstructor
+@AllArgsConstructor
 public class Result<T> {
     @Schema(name = "编码 0表示成功，其他值表示失败")
     private int code = 0;
@@ -24,6 +28,10 @@ public class Result<T> {
         Result<T> result = new Result<>();
         result.setData(data);
         return result;
+    }
+
+    public static <T> Result<T> ok(String msg, T data) {
+        return new Result(ErrorCode.SUCCESS.getCode(), msg, data);
     }
 
     public static <T> Result<T> error() {

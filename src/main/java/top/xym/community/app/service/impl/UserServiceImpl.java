@@ -15,6 +15,7 @@ import top.xym.community.app.model.dto.UserEditDTO;
 import top.xym.community.app.model.entity.User;
 import top.xym.community.app.model.vo.UserInfoVO;
 import top.xym.community.app.service.UserService;
+import top.xym.community.app.utils.SecurityUtils;
 
 @Slf4j
 @Service
@@ -23,7 +24,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public UserInfoVO userInfo() {
-        Integer userId = RequestContext.getUserId();
+        Long userId = SecurityUtils.getCurrentUserId();
         // 查询数据库
         User user = baseMapper.selectById(userId);
         if (user == null) {
@@ -36,8 +37,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
 
     @Override
     public UserInfoVO updateInfo(UserEditDTO userEditDTO) {
-        Integer userId = RequestContext.getUserId();
-        userEditDTO.setUserId(userId);
+        Long userId = SecurityUtils.getCurrentUserId();
+        userEditDTO.setUserId(userId.intValue());
         User user = UserConvert.INSTANCE.convert((userEditDTO));
         if (user.getUserId() == null) {
             throw new ServerException(ErrorCode.PARAMS_ERROR);

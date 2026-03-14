@@ -11,8 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import top.xym.community.app.common.cache.RedisCache;
 import top.xym.community.app.common.cache.RedisKeys;
-import top.xym.community.app.common.cache.RequestContext;
-import top.xym.community.app.common.cache.TokenStoreCache;
 import top.xym.community.app.common.exception.ErrorCode;
 import top.xym.community.app.common.exception.ServerException;
 import top.xym.community.app.mapper.UserMapper;
@@ -22,9 +20,11 @@ import top.xym.community.app.model.vo.UserLoginVO;
 import top.xym.community.app.service.AuthService;
 import top.xym.community.app.utils.AESUtil;
 import top.xym.community.app.utils.CommonUtils;
-import top.xym.community.app.utils.JwtUtil;
+import top.xym.community.app.utils.JwtUtils;
+import top.xym.community.app.utils.SecurityUtils;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import static top.xym.community.app.common.constant.Constant.*;
 
@@ -34,14 +34,14 @@ import static top.xym.community.app.common.constant.Constant.*;
 public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements AuthService {
 
     private final RedisCache redisCache;
-    private final TokenStoreCache tokenStoreCache;
+    private final JwtUtils jwtUtils;
 
     @Override
     public UserLoginVO loginByPhone(String phone, String code) {
         // 获取验证码cacheKey
-        String smsCacheKey = RedisKeys.getSmsKey(phone);
+        String smsCacheKey = RedisKeys.getSmsCodeKey(phone);
         // 从redis中获取验证码
-        Integer redisCode = (Integer) redisCache.get(smsCacheKey);
+        Integer redisCode = redisCache.get(smsCacheKey, Integer.class);
         // 校验验证码合法性
         if (ObjectUtils.isEmpty(redisCode) || !redisCode.toString().equals(code)) {
             throw new ServerException(ErrorCode.SMS_CODE_ERROR);
@@ -62,14 +62,16 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements Au
 //            baseMapper.insert(user);
 //        }
         // 构造token
-        String accessToken = JwtUtil.createToken(user.getUserId());
+        String accessToken = jwtUtils.generateToken(Long.valueOf(user.getUserId()));
+        Long userId = Long.valueOf(user.getUserId());
+        String tokenKey = RedisKeys.getUserTokenKey(userId);
+        redisCache.set(tokenKey, accessToken, 86400, TimeUnit.SECONDS);
         // 构造登录返回vo
         UserLoginVO userLoginVO = new UserLoginVO();
         userLoginVO.setUserId(user.getUserId());
         userLoginVO.setPhone(user.getPhone());
         userLoginVO.setWxOpenId(user.getWxOpenId());
         userLoginVO.setAccessToken(accessToken);
-        tokenStoreCache.saveUser(accessToken, userLoginVO);
         return userLoginVO;
     }
 
@@ -107,7 +109,10 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements Au
             user.setNickName(wxUserData.getString("nickName"));
             baseMapper.insert(user);
         }
-        String accessToken = JwtUtil.createToken(user.getUserId());
+        String accessToken = jwtUtils.generateToken(Long.valueOf(user.getUserId()));
+        Long userId = Long.valueOf(user.getUserId());
+        String tokenKey = RedisKeys.getUserTokenKey(userId);
+        redisCache.set(tokenKey, accessToken, 86400, TimeUnit.SECONDS);
         UserLoginVO userLoginVO = new UserLoginVO();
         userLoginVO.setUserId(user.getUserId());
         if (StringUtils.isNotBlank(user.getPhone())) {
@@ -115,56 +120,46 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements Au
         }
         userLoginVO.setWxOpenId(user.getWxOpenId());
         userLoginVO.setAccessToken(accessToken);
-        tokenStoreCache.saveUser(accessToken, userLoginVO);
         return userLoginVO;
     }
 
     @Override
     public void logout() {
-        // 从上下文中获取userId,然后获取redisKey
-        String cacheKey = RedisKeys.getUserIdKey(RequestContext.getUserId());
-        // 通过userId，获取redis中的 accessToken
-        String accessToken = (String) redisCache.get(cacheKey);
-        // 删除缓存中的 token
-        redisCache.delete(cacheKey);
-        // 删除缓存中的用户信息
-        tokenStoreCache.deleteUser(accessToken);
+        // 从 Spring Security 上下文获取 userId
+        Long userId = SecurityUtils.getCurrentUserId();
+
+        // 删除 redis 中的 token
+        String tokenKey = RedisKeys.getUserTokenKey(userId);
+        redisCache.delete(tokenKey);
     }
 
     @Override
     public void bindPhone(String phone, String code, String accessToken) {
-        // 简单校验手机号合法性
         if (!CommonUtils.checkPhone(phone)) {
             throw new ServerException(ErrorCode.PARAMS_ERROR);
         }
-        // 获取手机验证码，校验验证码正确性
-        String redisCode = redisCache.get(RedisKeys.getSmsKey(phone)).toString();
-        if (ObjectUtils.isEmpty(redisCache) || !redisCode.equals(code)) {
+
+        String smsCacheKey = RedisKeys.getSmsCodeKey(phone);
+        Integer redisCode = redisCache.get(smsCacheKey, Integer.class);
+
+        if (ObjectUtils.isEmpty(redisCode) || !redisCode.equals(code)) {
             throw new ServerException(ErrorCode.SMS_CODE_ERROR);
         }
-        // 删除验证码缓存
-        redisCache.delete(RedisKeys.getSmsKey(phone));
-        // 获取当前用户信息
+
+        redisCache.delete(smsCacheKey);
+
+        // 从 Spring Security 获取当前登录用户
+        Long userId = SecurityUtils.getCurrentUserId();
+        User user = baseMapper.selectById(userId);
+
+        // 判断手机号是否已被占用
         User userByPhone = baseMapper.getByPhone(phone);
-        // 获取当前登录的用户信息
-        UserLoginVO userLogin = tokenStoreCache.getUser(accessToken);
-        // 判断新手机号是否存在用户
-        if (!ObjectUtils.isNotEmpty(userByPhone)) {
-            // 存在用户，并且不是当前用户，抛出异常
-            if (!userLogin.getUserId().equals(userByPhone.getUserId())) {
-                throw new ServerException(ErrorCode.PHONE_IS_EXIST);
-            }
-            // 存在用户，并且是当前用户，提示用户手机号相同
-            if (userLogin.getPhone().equals(phone)) {
-                throw new ServerException(ErrorCode.THE_SAME_PHONE);
-            }
+        if (ObjectUtils.isNotEmpty(userByPhone) && !userByPhone.getUserId().equals(userId)) {
+            throw new ServerException(ErrorCode.PHONE_IS_EXIST);
         }
-        // 重新设置手机号
-        User user = baseMapper.selectById(userLogin.getUserId());
+
         user.setPhone(phone);
-        if (baseMapper.updateById(user) < 1) {
-            throw new ServerException(ErrorCode.OPERATION_FAIL);
-        }
+        baseMapper.updateById(user);
     }
 
 

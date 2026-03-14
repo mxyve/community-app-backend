@@ -12,7 +12,7 @@ import top.xym.community.app.service.UserService;
 
 @Slf4j
 @RestController
-@RequestMapping("/user")
+@RequestMapping("/api/v1/user")
 @AllArgsConstructor
 @Tag(name = "用户接口")
 public class UserController {

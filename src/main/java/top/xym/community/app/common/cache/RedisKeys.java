@@ -1,28 +1,21 @@
 package top.xym.community.app.common.cache;
 
+/**
+ * Redis Key 管理
+ */
 public class RedisKeys {
 
     /**
-     * 验证码Key
+     * 短信验证码 Key
      */
-    public static String getSmsKey(String phone) {
-        return "sms:captcha:" + phone;
+    public static String getSmsCodeKey(String mobile) {
+        return  "sms:code:" + mobile;
     }
 
     /**
-     * accessToken Key
+     * 用户 Token Key
      */
-    public static String getAccessTokenKey(String accessToken) {
-        return "sys:access:" + accessToken;
-    }
-
-    /**
-     * 获取用户 ID 密钥
-     *
-     * @param id id
-     * @return {@link String}
-     */
-    public static String getUserIdKey(Integer id) {
-        return "sys:userId:" + id;
+    public static String getUserTokenKey(Long userId) {
+        return "user:token:" + userId;
     }
 }

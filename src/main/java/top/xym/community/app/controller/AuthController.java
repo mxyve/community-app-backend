@@ -10,7 +10,7 @@ import top.xym.community.app.model.vo.UserLoginVO;
 import top.xym.community.app.service.AuthService;
 
 @RestController
-@RequestMapping("/auth")
+@RequestMapping("/api/v1/auth")
 @Tag(name = "认证接口")
 @AllArgsConstructor
 public class AuthController {

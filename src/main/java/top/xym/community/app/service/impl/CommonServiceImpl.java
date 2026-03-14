@@ -28,6 +28,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -50,7 +51,7 @@ public class CommonServiceImpl implements CommonService {
         // 生成随机验证码
         int code = CommonUtils.generateCode();
         // redis缓存验证码
-        redisCache.set(RedisKeys.getSmsKey(phone), code, 60);
+        redisCache.set(RedisKeys.getSmsCodeKey(phone), code, 60, TimeUnit.SECONDS);
         // 调用内部方法发送密码
         boolean result = cloopenSendSms(phone, code);
         if (result) {

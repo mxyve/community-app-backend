@@ -10,7 +10,7 @@ import top.xym.community.app.service.CommonService;
 
 @Tag(name = "基础服务")
 @RestController
-@RequestMapping("/common")
+@RequestMapping("/api/v1/common")
 @AllArgsConstructor
 public class CommonController {
     private final CommonService commonService;
