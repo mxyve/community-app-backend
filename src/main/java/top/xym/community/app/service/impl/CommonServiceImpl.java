@@ -15,7 +15,7 @@ import top.xym.community.app.common.cache.RedisCache;
 import top.xym.community.app.common.cache.RedisKeys;
 import top.xym.community.app.common.config.CloopenConfig;
 import top.xym.community.app.common.config.OssConfig;
-import top.xym.community.app.common.exception.ErrorCode;
+import top.xym.community.app.common.exception.ResultCode;
 import top.xym.community.app.common.exception.ServerException;
 import top.xym.community.app.service.CommonService;
 import top.xym.community.app.utils.CommonUtils;
@@ -46,7 +46,7 @@ public class CommonServiceImpl implements CommonService {
     public void sendSms(String phone) {
         //校验手机号合法性
         if (!CommonUtils.checkPhone(phone)) {
-            throw new ServerException(ErrorCode.PARAMS_ERROR);
+            throw new ServerException(ResultCode.PARAMS_ERROR);
         }
         // 生成随机验证码
         int code = CommonUtils.generateCode();
@@ -98,7 +98,7 @@ public class CommonServiceImpl implements CommonService {
                 log.error("错误码={} 错误信息={}", result.get("statusCode"), result.get("statusMsg"));
             }
         } catch (Exception e) {
-            throw new ServerException(ErrorCode.CODE_SEND_FAIL);
+            throw new ServerException(ResultCode.CODE_SEND_FAIL);
         }
         return true;
     }

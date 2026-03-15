@@ -81,7 +81,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/common/sendSms").permitAll()
                         // 放行其他不需要登录的接口
                         .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
-
+                        .requestMatchers("/api/v1/messages/stream").permitAll()
                         // 其他所有接口都需要登录
                         .anyRequest().authenticated()
                 )

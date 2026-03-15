@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import top.xym.community.app.common.cache.RedisCache;
 import top.xym.community.app.common.cache.RedisKeys;
-import top.xym.community.app.common.exception.ErrorCode;
+import top.xym.community.app.common.exception.ResultCode;
 import top.xym.community.app.common.exception.ServerException;
 import top.xym.community.app.mapper.UserMapper;
 import top.xym.community.app.model.dto.WxLoginDTO;
@@ -44,7 +44,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements Au
         Integer redisCode = redisCache.get(smsCacheKey, Integer.class);
         // 校验验证码合法性
         if (ObjectUtils.isEmpty(redisCode) || !redisCode.toString().equals(code)) {
-            throw new ServerException(ErrorCode.SMS_CODE_ERROR);
+            throw new ServerException(ResultCode.SMS_CODE_ERROR);
         }
         // 删除用过的验证码
         redisCache.delete(smsCacheKey);
@@ -136,14 +136,14 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements Au
     @Override
     public void bindPhone(String phone, String code, String accessToken) {
         if (!CommonUtils.checkPhone(phone)) {
-            throw new ServerException(ErrorCode.PARAMS_ERROR);
+            throw new ServerException(ResultCode.PARAMS_ERROR);
         }
 
         String smsCacheKey = RedisKeys.getSmsCodeKey(phone);
         Integer redisCode = redisCache.get(smsCacheKey, Integer.class);
 
         if (ObjectUtils.isEmpty(redisCode) || !redisCode.equals(code)) {
-            throw new ServerException(ErrorCode.SMS_CODE_ERROR);
+            throw new ServerException(ResultCode.SMS_CODE_ERROR);
         }
 
         redisCache.delete(smsCacheKey);
@@ -155,7 +155,7 @@ public class AuthServiceImpl extends ServiceImpl<UserMapper, User> implements Au
         // 判断手机号是否已被占用
         User userByPhone = baseMapper.getByPhone(phone);
         if (ObjectUtils.isNotEmpty(userByPhone) && !userByPhone.getUserId().equals(userId)) {
-            throw new ServerException(ErrorCode.PHONE_IS_EXIST);
+            throw new ServerException(ResultCode.PHONE_IS_EXIST);
         }
 
         user.setPhone(phone);

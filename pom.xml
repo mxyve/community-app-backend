@@ -27,7 +27,21 @@
         <aliyun-sdk-oss.version>3.17.4</aliyun-sdk-oss.version>
         <cloopen.sms.version>1.0.4</cloopen.sms.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <spring-ai.version>1.1.0-M4</spring-ai.version>
+        <spring-ai-alibaba.version>1.1.0.0-M5</spring-ai-alibaba.version>
     </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.alibaba.cloud.ai</groupId>
+                <artifactId>spring-ai-alibaba-bom</artifactId>
+                <version>${spring-ai-alibaba.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <!--热更新依赖-->
@@ -159,6 +173,13 @@
             <artifactId>jjwt-jackson</artifactId>
             <version>${jjwt.version}</version>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- Spring AI Alibaba DashScope Starter -->
+        <dependency>
+            <groupId>com.alibaba.cloud.ai</groupId>
+            <artifactId>spring-ai-alibaba-starter-dashscope</artifactId>
+            <version>1.1.0.0-M5</version>
         </dependency>
 
     </dependencies>

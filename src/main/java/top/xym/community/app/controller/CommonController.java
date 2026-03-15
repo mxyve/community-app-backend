@@ -19,12 +19,12 @@ public class CommonController {
     @Operation(summary = "发送短信")
     public Result<Object> sendSms(@RequestParam("phone") String phone) {
         commonService.sendSms(phone);
-        return Result.ok();
+        return Result.success();
     }
 
     @PostMapping(value = "/upload/img")
     @Operation(summary = "图片上传")
     public Result<String> upload(@RequestBody MultipartFile file) {
-        return Result.ok(commonService.upload(file));
+        return Result.success(commonService.upload(file));
     }
 }

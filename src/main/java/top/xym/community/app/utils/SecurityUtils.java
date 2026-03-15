@@ -3,7 +3,7 @@ package top.xym.community.app.utils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import top.xym.community.app.common.exception.ErrorCode;
+import top.xym.community.app.common.exception.ResultCode;
 import top.xym.community.app.common.exception.ServerException;
 
 /**
@@ -25,13 +25,13 @@ public class SecurityUtils {
         Authentication authentication = getCurrentAuthentication();
         if (authentication == null || authentication.getPrincipal() == null) {
             log.warn("用户未认证，无法获取用户 ID");
-            throw new ServerException(ErrorCode.UNAUTHORIZED);
+            throw new ServerException(ResultCode.UNAUTHORIZED);
         }
         try {
             return (Long) authentication.getPrincipal();
         } catch (ClassCastException e) {
             log.error("获取用户 ID 失败，principal 类型不是 Long: {}", authentication.getPrincipal().getClass(), e);
-            throw new ServerException(ErrorCode.UNAUTHORIZED);
+            throw new ServerException(ResultCode.UNAUTHORIZED);
         }
     }
 

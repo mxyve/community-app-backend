@@ -21,12 +21,12 @@ public class UserController {
     @GetMapping("info")
     @Operation(summary = "查询用户信息")
     public Result<UserInfoVO> userInfo() {
-        return Result.ok(userService.userInfo());
+        return Result.success(userService.userInfo());
     }
 
     @PostMapping("update")
     @Operation(summary = "修改用户信息")
     public Result<UserInfoVO> update(@RequestBody UserEditDTO userEditDTO) {
-        return Result.ok(userService.updateInfo(userEditDTO));
+        return Result.success(userService.updateInfo(userEditDTO));
     }
 }

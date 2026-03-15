@@ -16,6 +16,27 @@ spring:
       max-file-size: 10MB # 单个上传⽂件⼤⼩限定为10M
       max-request-size: 100MB # 单次上传⽂件⼤⼩限定为100M
 
+  ai:
+    dashscope:
+      api-key: ${AI_DASHSCOPE_API_KEY}
+      base-url: https://dashscope.aliyuncs.com
+      read-timeout: 8000 # 读取超时时间，默认 8 秒
+      chat:
+        options:
+          model: qwen-plus
+          #          model: qwen-vl-max-latest
+          # 基础参数：压缩计算量
+          temperature: 0.2  # 设置输出随机性为中等程度
+          seed: 123456  # 固定种子，避免重复推理
+          top_p: 0.6 # 收集采样范围，加速解码
+          top_k: 30 # 限制候选词数量
+          max-tokens: 2000  # 控制输出长度
+          repetition_penalty: 1.1 # 轻度去重，避免废话
+          # 流式输出
+          stream: true
+          response_format: { type: "text" }
+          tool-choice: "auto"
+
 mybatis-plus:
   mapper-locations: classpath:/mapper/*Mapper.xml
   type-aliases-package: top.xym.*.entity
@@ -67,6 +88,10 @@ aliyun:
     accessKeyId: LTAI5tQnFUmsUb2gMFdE7W2d
     accessKeySecret: McFDTO4w3onWHaSBjKSnFr05IfQShq
     bucketName: mxy-u
+    temp-dir: temp/qa-image
+    url-expire: 1800
+    max-file-size: 5MB
+    allowed-types: jpg,jpeg,png,gif
 
 share:
   sms:

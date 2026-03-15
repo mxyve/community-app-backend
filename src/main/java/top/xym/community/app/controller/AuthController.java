@@ -20,19 +20,19 @@ public class AuthController {
     @Operation(summary = "手机号登录")
     public Result<UserLoginVO> loginByPhone(@RequestParam("phone") String phone,
                                             @RequestParam("code") String code) {
-        return Result.ok(authService.loginByPhone(phone, code));
+        return Result.success(authService.loginByPhone(phone, code));
     }
 
     @PostMapping("weChatLogin")
     @Operation(summary = "微信登录")
     public Result<UserLoginVO> wxChatLogin(@RequestBody WxLoginDTO dto) {
-        return Result.ok(authService.weChatLogin(dto));
+        return Result.success(authService.weChatLogin(dto));
     }
 
     @PostMapping("/logout")
     @Operation(summary = "登出")
     public Result<Object> logout() {
-        return Result.ok();
+        return Result.success();
     }
 
     @PostMapping("/bindPhone")
@@ -41,6 +41,6 @@ public class AuthController {
                                     @RequestParam("code") String code,
                                     @RequestHeader("Authorization") String accessToken) {
         authService.bindPhone(phone, code, accessToken);
-        return Result.ok();
+        return Result.success();
     }
 }

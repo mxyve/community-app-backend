@@ -33,4 +33,15 @@ public class SwaggerConfig {
                 .pathsToMatch(paths)
                 .packagesToScan(packagedToMatch).build();
     }
+
+    @Bean
+    public GroupedOpenApi messageApi() {
+        String[] paths = {"/**"};
+        String[] packagedToMatch = {"top.xym.community.app.module.message"};
+        return GroupedOpenApi.builder()
+                .group("3")
+                .displayName("Message API")
+                .pathsToMatch(paths)
+                .packagesToScan(packagedToMatch).build();
+    }
 }

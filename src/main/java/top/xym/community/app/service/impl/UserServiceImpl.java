@@ -1,13 +1,11 @@
 package top.xym.community.app.service.impl;
 
 
-import cn.hutool.system.UserInfo;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import top.xym.community.app.common.cache.RequestContext;
-import top.xym.community.app.common.exception.ErrorCode;
+import top.xym.community.app.common.exception.ResultCode;
 import top.xym.community.app.common.exception.ServerException;
 import top.xym.community.app.convert.UserConvert;
 import top.xym.community.app.mapper.UserMapper;
@@ -29,7 +27,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         User user = baseMapper.selectById(userId);
         if (user == null) {
             log.error("用户不存在，userId: {}", userId);
-            throw new ServerException(ErrorCode.USER_NOT_EXIST);
+            throw new ServerException(ResultCode.USER_NOT_EXIST);
         }
         UserInfoVO userInfoVO = UserConvert.INSTANCE.convert(user);
         return userInfoVO;
@@ -41,7 +39,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         userEditDTO.setUserId(userId.intValue());
         User user = UserConvert.INSTANCE.convert((userEditDTO));
         if (user.getUserId() == null) {
-            throw new ServerException(ErrorCode.PARAMS_ERROR);
+            throw new ServerException(ResultCode.PARAMS_ERROR);
         }
         try {
             if (baseMapper.updateById(user) < 1) {

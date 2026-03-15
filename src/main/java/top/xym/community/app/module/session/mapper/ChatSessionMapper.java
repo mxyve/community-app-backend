@@ -5,5 +5,5 @@ import org.apache.ibatis.annotations.Mapper;
 import top.xym.community.app.module.session.model.entity.ChatSession;
 
 @Mapper
-public interface ChatSessionMapper extends BaseMapper<ChatSession>{
+public interface ChatSessionMapper extends BaseMapper<ChatSession> {
 }

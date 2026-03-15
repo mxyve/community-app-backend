@@ -2,35 +2,32 @@ package top.xym.community.app.common.exception;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 
 import java.io.Serial;
-
-@Data
-@EqualsAndHashCode(callSuper = true)
-public class ServerException extends RuntimeException {
+@Getter
+public class ServerException extends RuntimeException{
 
     @Serial
     private static final long serialVersionUID = 1L;
 
-    private int code;
-    private String msg;
+    private final int code;
 
-    public ServerException(String msg) {
-        super(msg);
-        this.code = ErrorCode.INTERNAL_SERVER_ERROR.getCode();
-        this.msg = msg;
+    // 快速抛出「默认错误码 + 自定义提示信息」的异常
+    public ServerException(String message) {
+        super(message);
+        this.code = ResultCode.FAIL.getCode();
     }
 
-    public ServerException(ErrorCode errorCode) {
-        super(errorCode.getMsg());
-        this.code = errorCode.getCode();
-        this.msg = errorCode.getMsg();
+    // 抛出「自定义错误码 + 自定义提示信息」的异常
+    public ServerException(int code, String message) {
+        super(message);
+        this.code = code;
     }
 
-    public ServerException(String msg, Throwable e) {
-        super(msg, e);
-        this.code = ErrorCode.INTERNAL_SERVER_ERROR.getCode();
-        this.msg = msg;
+    // 抛出「枚举定义的标准错误码 + 标准提示信息」的异常
+    public ServerException(ResultCode resultCode) {
+        super(resultCode.getMessage());
+        this.code = resultCode.getCode();
     }
-
 }

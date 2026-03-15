@@ -17,11 +17,11 @@ public class SessionResponse {
     @Schema(description = "会话标题")
     private String title;
 
-    @Schema(description = "会话类型")
-    private String agentType;
-
     @Schema(description = "使用的模型名称")
     private String modelName;
+
+    @Schema(description = "会话类型")
+    private String agentType;
 
     @Schema(description = "会话状态（0-活跃，1-归档）")
     private Integer status;

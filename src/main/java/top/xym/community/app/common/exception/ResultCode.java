@@ -1,12 +1,11 @@
 package top.xym.community.app.common.exception;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
 
-@Getter
-@AllArgsConstructor
-public enum ErrorCode {
+import lombok.Generated;
+
+public enum ResultCode {
     SUCCESS(200, "操作成功"),
+    FAIL(400, "操作失败"),
     UNAUTHORIZED(401, "还未授权，不能访问"),
     FORBIDDEN(403,"没有权限，禁止访问"),
     INTERNAL_SERVER_ERROR(500, "服务器异常，请稍后再试"),
@@ -23,5 +22,21 @@ public enum ErrorCode {
     ALREADY_HAS_CHECK(3009, "今日已签到");
 
     private final int code;
-    private final String msg;
+    private final String message;
+
+    @Generated
+    public int getCode() {
+        return this.code;
+    }
+
+    @Generated
+    public String getMessage() {
+        return this.message;
+    }
+
+    @Generated
+    private ResultCode(int code, String message) {
+        this.code = code;
+        this.message = message;
+    }
 }

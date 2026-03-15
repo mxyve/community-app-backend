@@ -26,13 +26,13 @@ public class ChatSession {
     @Schema(description = "用户ID")
     private Long userId;
 
-    @TableField("agent_type")
-    @Schema(description = "会话类型：normal | edu_agent | resume_agent")
-    private String agentType;
-
     @TableField("model_name")
     @Schema(description = "模型名称")
     private String modelName;
+
+    @TableField("agent_type")
+    @Schema(description = "会话类型：normal | edu_agent | resume_agent")
+    private String agentType;
 
     @TableField("status")
     @Schema(description = "会话状态 0-活跃 1-归档")
@@ -52,7 +52,8 @@ public class ChatSession {
     @TableField("update_time")
     private LocalDateTime updateTime;
 
-    //    @TableLogic
+    @TableField(value = "deleted")
+//    @TableLogic
     @Schema(description = "逻辑删除 0-未删除 1-已删除")
     private Integer deleted;
 }
