@@ -55,4 +55,15 @@ public class SwaggerConfig {
                 .pathsToMatch(paths)
                 .packagesToScan(packagedToMatch).build();
     }
+
+    @Bean
+    public GroupedOpenApi servicesApi() {
+        String[] paths = {"/**"};
+        String[] packagedToMatch = {"top.xym.community.app.module.service"};
+        return GroupedOpenApi.builder()
+                .group("5")
+                .displayName("Services API")
+                .pathsToMatch(paths)
+                .packagesToScan(packagedToMatch).build();
+    }
 }
