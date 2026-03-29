@@ -49,6 +49,8 @@ public class ServicesService {
 
         LambdaQueryWrapper<Services> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Services::getDeleted, 0)
+                .eq(Services::getStatus, 1)
+                .eq(Services::getAuditStatus, 1)
                 .eq(Services::getStatus, 1);
 
         // 按用户地区筛选

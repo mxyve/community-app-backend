@@ -1,9 +1,6 @@
 package top.xym.community.app.module.service.model.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -101,6 +98,7 @@ public class Services {
     @TableField("update_time")
     private LocalDateTime updateTime;
 
+    @TableLogic
     @TableField("deleted")
     private Integer deleted;
 
@@ -110,4 +108,16 @@ public class Services {
 
     @TableField(exist = false)
     private String merchantName;
+
+    @TableField("audit_status")
+    private Integer auditStatus;
+
+    @TableField("audit_reason")
+    private String auditReason;
+
+    @TableField("audit_time")
+    private LocalDateTime auditTime;
+
+    @TableField("auditor_id")
+    private Long auditorId;
 }
