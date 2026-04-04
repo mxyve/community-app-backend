@@ -11,23 +11,17 @@ import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = false)
-@TableName("t_tag")
-public class Tag {
+@TableName("t_article_like")
+public class ArticleLike {
 
-    @TableId(value = "tag_id", type = IdType.AUTO)
-    private Integer tagId;
+    @TableId(value = "id", type = IdType.AUTO)
+    private Integer id;
 
-    @TableField("name")
-    private String name;
+    @TableField("article_id")
+    private Integer articleId;
 
-    @TableField("icon")
-    private String icon;
-
-    @TableField("color")
-    private String color;
-
-    @TableField("status")
-    private Integer status;
+    @TableField("user_id")
+    private Integer userId;
 
     @TableField("create_time")
     private LocalDateTime createTime;

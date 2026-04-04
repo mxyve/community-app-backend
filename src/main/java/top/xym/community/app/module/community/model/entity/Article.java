@@ -32,6 +32,9 @@ public class Article {
     @TableField("img")
     private String img;
 
+    @TableField("status")
+    private Integer status;
+
     @TableField("view_count")
     private Long viewCount;
 
@@ -64,4 +67,19 @@ public class Article {
 
     @TableField(exist = false)
     private String tagColor;
+
+    @TableField(exist = false)
+    private String icon;
+
+    @TableField(exist = false)
+    private String nickName;
+
+    @TableField(exist = false)
+    private String username;
+
+    @TableField(exist = false)
+    private String avatar;
+
+    @TableField(exist = false)
+    private Boolean isLiked;
 }

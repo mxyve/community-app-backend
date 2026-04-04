@@ -1,6 +1,7 @@
 package top.xym.community.app.module.community.controller;
 
-import cn.hutool.core.lang.func.VoidFunc;
+
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -53,6 +54,66 @@ public class ArticleController {
     public Result<PageResponse<Article>> getArticlePage(@RequestBody ArticlePageRequest request) {
         PageResponse<Article> pageResponse = articleService.getArticlePage(request);
         return Result.success("查询成功", pageResponse);
+    }
+
+    /**
+     * 文章详情
+     */
+    @GetMapping("/{articleId}")
+    @Operation(summary = "获取文章详情")
+    public Result<Article> getArticleDetail(@PathVariable Integer articleId) {
+        Article article = articleService.getArticleDetail(articleId);
+        return Result.success("查询成功", article);
+    }
+
+    /**
+     * 获取当前用户点赞的文章列表
+     */
+    @PostMapping("/myLike/pages")
+    @Operation(summary = "获取当前用户点赞的文章列表（分页）")
+    public Result<PageResponse<Article>> getMyLikeArticlePage(@RequestBody ArticlePageRequest request) {
+        PageResponse<Article> pageResponse = articleService.getMyLikeArticlePage(request);
+        return Result.success("查询成功", pageResponse);
+    }
+
+    /**
+     * 获取当前用户发布的文章列表（分页）
+     */
+    @PostMapping("/my/post/pages")
+    @Operation(summary = "获取当前用户发布的文章列表（分页）")
+    public Result<PageResponse<Article>> getMyArticlePage(@RequestBody ArticlePageRequest request) {
+        PageResponse<Article> pageResponse = articleService.getMyArticlePage(request);
+        return Result.success("查询成功", pageResponse);
+    }
+
+    /**
+     * 统计：当前用户点赞的文章总数
+     */
+    @GetMapping("/count/my-like")
+    @Operation(summary = "统计用户点赞的文章数量")
+    public Result<Long> countMyLikeArticles() {
+        Long count = articleService.countMyLikeArticles();
+        return Result.success("查询成功", count);
+    }
+
+    /**
+     * 统计：当前用户发布的文章总数
+     */
+    @GetMapping("/count/my-post")
+    @Operation(summary = "统计用户发布的文章数量")
+    public Result<Long> countMyPostArticles() {
+        Long count = articleService.countMyPostArticles();
+        return Result.success("查询成功", count);
+    }
+
+    /**
+     * 统计：今日发布的帖子总数
+     */
+    @GetMapping("/count/today")
+    @Operation(summary = "统计今日发布的帖子数量")
+    public Result<Long> countTodayPosts() {
+        Long count = articleService.countTodayPosts();
+        return Result.success("查询成功", count);
     }
 
 }
