@@ -1,49 +1,40 @@
 package top.xym.community.app.module.community.model.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
-import lombok.EqualsAndHashCode;
 
 import java.time.LocalDateTime;
 
 @Data
-@EqualsAndHashCode(callSuper = false)
 @TableName("t_comment")
 public class Comment {
 
-    @TableId(value = "comment_id", type = IdType.AUTO)
-    private Integer commentId;
+    @TableId(type = IdType.AUTO)
+    private Long commentId;
 
-    @TableField("article_id")
-    private Integer articleId;
+    private Long articleId;
 
-    @TableField("user_id")
-    private Integer userId;
+    private Long userId;
 
-    @TableField("parent_comment_id")
-    private Integer parentCommentId;
+    private Long parentCommentId;
 
-    @TableField("to_user_id")
-    private Integer toUserId;
+    private Long toUserId;
 
-    @TableField("content")
+    private Long replyCount;
+
     private String content;
 
-    @TableField("img")
     private String img;
 
-    @TableField("like_count")
     private Long likeCount;
 
-    @TableField("create_time")
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
-    @TableField("update_time")
+    @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
 
-    @TableField("deleted")
+    @TableLogic
+    @TableField(fill = FieldFill.INSERT)
     private Integer deleted;
 }
