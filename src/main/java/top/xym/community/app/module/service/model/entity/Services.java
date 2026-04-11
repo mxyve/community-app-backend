@@ -80,22 +80,22 @@ public class Services {
     @TableField("status")
     private Integer status;
 
-    @TableField("province")
-    private String province;
+    @TableField("audit_status")
+    private Integer auditStatus;
 
-    @TableField("city")
-    private String city;
+    @TableField("audit_reason")
+    private String auditReason;
 
-    @TableField("district")
-    private String district;
+    @TableField("audit_time")
+    private LocalDateTime auditTime;
 
-    @TableField("address_detail")
-    private String addressDetail;
+    @TableField("auditor_id")
+    private Long auditorId;
 
-    @TableField("create_time")
+    @TableField(value = "create_time", fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 
-    @TableField("update_time")
+    @TableField(value = "update_time", fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
 
     @TableLogic
@@ -108,16 +108,4 @@ public class Services {
 
     @TableField(exist = false)
     private String merchantName;
-
-    @TableField("audit_status")
-    private Integer auditStatus;
-
-    @TableField("audit_reason")
-    private String auditReason;
-
-    @TableField("audit_time")
-    private LocalDateTime auditTime;
-
-    @TableField("auditor_id")
-    private Long auditorId;
 }

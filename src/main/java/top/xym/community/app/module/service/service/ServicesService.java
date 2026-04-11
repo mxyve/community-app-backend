@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.stereotype.Service;
 import top.xym.community.app.mapper.UserMapper;
 import top.xym.community.app.model.dto.PageResponse;
@@ -17,6 +18,7 @@ import top.xym.community.app.module.service.model.entity.ServiceMerchant;
 import top.xym.community.app.module.service.model.entity.Services;
 import top.xym.community.app.utils.SecurityUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -49,19 +51,41 @@ public class ServicesService {
 
         LambdaQueryWrapper<Services> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(Services::getDeleted, 0)
-                .eq(Services::getStatus, 1)
                 .eq(Services::getAuditStatus, 1)
                 .eq(Services::getStatus, 1);
 
-        // 按用户地区筛选
-        if (user.getProvince() != null && !user.getProvince().isEmpty()) {
-            wrapper.eq(Services::getProvince, user.getProvince());
-        }
-        if (user.getCity() != null && !user.getCity().isEmpty()) {
-            wrapper.eq(Services::getCity, user.getCity());
-        }
-        if (user.getDistrict() != null && user.getDistrict().isEmpty()) {
-            wrapper.eq(Services::getDistrict, user.getDistrict());
+        // 构建地区匹配条件
+        if (user != null) {
+            String province = user.getProvince();
+            String city = user.getCity();
+            String district = user.getDistrict();
+
+            // 用户有位置才加地区筛选
+            if (StringUtils.isNotBlank(province)) {
+                // 创建一个要匹配的地区规则列表
+                List<String> matchPatterns = new ArrayList<>();
+
+                matchPatterns.add("全国");
+
+                // 按用户位置精度拼接
+                if (StringUtils.isNotBlank(district)) {
+                    matchPatterns.add(province + "-" + city + "-" + district);
+                } else if (StringUtils.isNotBlank(city)) {
+                    matchPatterns.add(province + "-" + city);
+                } else {
+                    matchPatterns.add(province);
+                }
+
+                // 拼接 OR 条件
+                wrapper.and(w -> {
+                    for (String pattern : matchPatterns) {
+                        w.or(i -> i.apply(
+                                "JSON_CONTAINS(service_area, {0}, '$')",
+                                "\"" + pattern + "\""
+                        ));
+                    }
+                });
+            }
         }
 
         // 分类筛选

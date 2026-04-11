@@ -73,7 +73,7 @@ public class SwaggerConfig {
         String[] packagedToMatch = {"top.xym.community.app.module.myProfile"};
         return GroupedOpenApi.builder()
                 .group("6")
-                .displayName("Services API")
+                .displayName("Location API")
                 .pathsToMatch(paths)
                 .packagesToScan(packagedToMatch).build();
     }
