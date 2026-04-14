@@ -1,11 +1,16 @@
 package top.xym.community.app.module.conversation.service;
 
+import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
 import top.xym.community.app.module.conversation.enums.MsgTypeEnum;
 import top.xym.community.app.module.conversation.enums.ReceiverTypeEnum;
 import top.xym.community.app.module.conversation.enums.SenderTypeEnum;
@@ -14,9 +19,11 @@ import top.xym.community.app.module.conversation.model.dto.MessageResponse;
 import top.xym.community.app.module.conversation.model.dto.MessageSendRequest;
 import top.xym.community.app.module.conversation.model.entity.ConversationMessage;
 import top.xym.community.app.module.conversation.model.entity.ConversationSession;
-
+import org.springframework.http.HttpHeaders;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -26,6 +33,9 @@ public class ConversationMessageService {
 
     private final ConversationMessageMapper messageMapper;
     private final ConversationSessionService sessionService;
+
+    @Resource
+    private RestTemplate restTemplate;
 
     /**
      * 发送消息（居民端）
@@ -63,6 +73,27 @@ public class ConversationMessageService {
         sessionService.incrementMerchantUnreadCount(session.getId());
 
         log.info("消息发送成功，messageId: {}, sessionId: {}", message.getId(), session.getId());
+
+        // 推送给商家（后台实时显示）
+        WebSocketService.sendToUser(message.getReceiverId(), JSON.toJSONString(convertToResponse(message)));
+
+        // 通知商家后台推送消息给商家
+        try {
+            String url = "http://localhost:8089/api/v1/chat/push-to-merchant";
+
+            // 加 JSON 请求头，解决 415 报错
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> param = new HashMap<>();
+            param.put("merchantId", message.getReceiverId());
+            param.put("message", convertToResponse(message));
+
+            HttpEntity<Map<String, Object>> httpRequest = new HttpEntity<>(param, headers);
+            restTemplate.postForObject(url, httpRequest, String.class);
+        } catch (Exception e) {
+            log.error("通知商家后台失败", e);
+        }
 
         return convertToResponse(message);
     }

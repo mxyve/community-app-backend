@@ -82,6 +82,8 @@ public class SecurityConfig {
                         // 放行其他不需要登录的接口
                         .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
                         .requestMatchers("/api/v1/messages/stream").permitAll()
+                        .requestMatchers("/api/v1/chat/**").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
                         // 其他所有接口都需要登录
                         .anyRequest().authenticated()
                 )
