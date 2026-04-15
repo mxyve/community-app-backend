@@ -2,6 +2,7 @@ package top.xym.community.app.module.service.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import top.xym.community.app.common.result.Result;
@@ -9,6 +10,8 @@ import top.xym.community.app.model.dto.PageResponse;
 import top.xym.community.app.module.service.model.dto.OrderPageRequest;
 import top.xym.community.app.module.service.model.entity.ServiceOrder;
 import top.xym.community.app.module.service.service.ServiceOrderService;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/orders")
@@ -52,5 +55,20 @@ public class ServiceOrderController {
     public Result<Void> deleteOrder(@PathVariable Integer id) {
         orderService.deleteOrder(id);
         return Result.success("删除成功", null);
+    }
+
+    @PostMapping("/createPay")
+    public Result<?> createPay(@RequestBody Map<String, String> map) {
+        return orderService.createAlipayQrCode(map.get("orderNo"));
+    }
+
+    @PostMapping("/payNotify")
+    public String payNotify(HttpServletRequest request) {
+        return orderService.payNotify(request);
+    }
+
+    @GetMapping("/payStatus/{orderNo}")
+    public Result<?> getPayStatus(@PathVariable String orderNo) {
+        return orderService.getPayStatus(orderNo);
     }
 }

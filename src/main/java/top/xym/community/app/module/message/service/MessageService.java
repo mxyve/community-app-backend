@@ -12,6 +12,9 @@ import org.springframework.ai.chat.model.ChatModel;
 
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
@@ -43,6 +46,15 @@ public class MessageService {
     private final SessionService sessionService;
     private final ChatModel chatModel;
     private final DashScopeChatOptions dashScopeChatOptions;
+
+    // 新增注入
+    private final VectorStore vectorStore;
+    private final AliOssFileService aliOssFileService;
+
+    // 常量
+    private static final double SIMILARITY_THRESHOLD = 0.4;
+    private static final int TOP_K = 5;
+    private static final int MAX_DOC_LENGTH = 1500;
 
     /**
      * 发送消息并获取AI流式响应（核心方法）
@@ -165,63 +177,92 @@ public class MessageService {
     }
 
     /**
-     * 构建AI请求提示词（系统消息+用户消息）
+     * 构建 RAG 增强提示词（带向量检索 + 知识库过滤）
      */
     private Prompt buildPrompt(String userContent, List<String> imageUrlList) {
         List<Message> messages = new ArrayList<>();
 
-        // 1. 系统消息
-        messages.add(new SystemMessage("你是一个专业、友好的智能助手，能够准确、清晰地回答用户的问题，同时具备图片解析能力。" +
-                "回答需结构清晰，语言流畅，避免使用零散的短句。"));
+        // ====================== RAG 核心：向量检索 ======================
+        String enhancedUserMessage = userContent;
+        try {
+            // 1. 向量检索
+            SearchRequest searchRequest = SearchRequest.builder()
+                    .query(userContent)
+                    .topK(TOP_K)
+                    .similarityThreshold(SIMILARITY_THRESHOLD)
+                    .build();
+            List<Document> docs = vectorStore.similaritySearch(searchRequest);
 
-        // 2. 组装图片
+            // 2. 只保留启用的文档
+            List<String> enabledVectorIds = aliOssFileService.listEnabledVectorIds();
+            docs = docs.stream().filter(doc -> enabledVectorIds.contains(doc.getId())).toList();
+
+            // 3. 构建增强提示词
+            if (!docs.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                sb.append("【社区知识库参考资料】\n");
+                for (int i = 0; i < docs.size(); i++) {
+                    String content = cleanDocumentContent(docs.get(i).getText());
+                    sb.append(i + 1).append(". ").append(content).append("\n");
+                }
+                sb.append("\n请只根据以上资料回答，不知道就说不知道。\n");
+                sb.append("用户问题：").append(userContent);
+                enhancedUserMessage = sb.toString();
+            }
+        } catch (Exception e) {
+            // 检索失败不影响对话
+            System.err.println("RAG 检索失败：" + e.getMessage());
+        }
+
+        // ====================== 系统消息 ======================
+        messages.add(new SystemMessage("你是智能社区AI助手，回答简洁准确，基于知识库回答。"));
+
+        // ====================== 图片处理（你原有逻辑不变） ======================
         List<Media> mediaList = new ArrayList<>();
         if (imageUrlList != null && !imageUrlList.isEmpty()) {
             for (String imageUrl : imageUrlList) {
                 try {
                     Media media = new Media(
-                            // 根据后缀自动选 MIME
-                            imageUrl.toLowerCase().endsWith(".jpg") || imageUrl.toLowerCase().endsWith(".jpeg")
-                                    ? MimeTypeUtils.IMAGE_JPEG
-                                    : MimeTypeUtils.IMAGE_PNG,
+                            imageUrl.toLowerCase().endsWith("jpg") || imageUrl.toLowerCase().endsWith("jpeg")
+                                    ? MimeTypeUtils.IMAGE_JPEG : MimeTypeUtils.IMAGE_PNG,
                             new UrlResource(imageUrl.trim())
                     );
                     mediaList.add(media);
-                } catch (Exception e) {
-                    // 记录日志后跳过
-                    System.err.println("图片URL无效：" + imageUrl + ", " + e.getMessage());
-                }
+                } catch (Exception ignored) {}
             }
         }
 
-        // 3. 构建用户消息（带图片）
+        // ====================== 用户消息（RAG 增强） ======================
         UserMessage userMessage = UserMessage.builder()
-                .text(userContent)
+                .text(enhancedUserMessage)
                 .media(mediaList)
                 .build();
 
-        // 4. 只有真正带图才标记 IMAGE & 开启多模态
-        if (!imageUrlList.isEmpty()) {
-            userMessage.getMetadata().put(
-                    DashScopeApiConstants.MESSAGE_FORMAT,
-                    MessageFormat.IMAGE
-            );
+        if (!mediaList.isEmpty()) {
+            userMessage.getMetadata().put(DashScopeApiConstants.MESSAGE_FORMAT, MessageFormat.IMAGE);
         }
 
         messages.add(userMessage);
 
-        // 5. 运行时选模型 + 多模态开关
-        String model = imageUrlList.isEmpty() ? "qwen-plus" : "qwen-vl-max-latest";
-
+        // 模型选择（原图生逻辑）
+        String model = mediaList.isEmpty() ? "qwen-plus" : "qwen-vl-max-latest";
         DashScopeChatOptions options = DashScopeChatOptions.builder()
                 .withModel(model)
-                .withMultiModel(!imageUrlList.isEmpty())  // ← 有图才开
+                .withMultiModel(!mediaList.isEmpty())
                 .withVlHighResolutionImages(true)
                 .withTemperature(0.2)
                 .withTopP(0.6)
                 .build();
 
         return new Prompt(messages, options);
+    }
+
+    private String cleanDocumentContent(String rawContent) {
+        String cleaned = rawContent.replaceAll("===== Page \\d+ =====", "").trim();
+        if (cleaned.length() > MAX_DOC_LENGTH) {
+            cleaned = cleaned.substring(0, MAX_DOC_LENGTH) + "...";
+        }
+        return cleaned;
     }
 
     /**

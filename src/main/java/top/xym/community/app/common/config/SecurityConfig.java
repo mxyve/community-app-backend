@@ -83,6 +83,7 @@ public class SecurityConfig {
                         .requestMatchers("/doc.html", "/webjars/**", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
                         .requestMatchers("/api/v1/messages/stream").permitAll()
                         .requestMatchers("/api/v1/chat/**").permitAll()
+                        .requestMatchers("/api/v1/orders/payNotify").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         // 其他所有接口都需要登录
                         .anyRequest().authenticated()
