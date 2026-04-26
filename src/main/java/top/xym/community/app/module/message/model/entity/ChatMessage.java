@@ -35,6 +35,9 @@ public class ChatMessage {
     @TableField("image_urls")
     private String imageUrls;
 
+    @TableField("audio")
+    private String audio;
+
     @TableField("tokens")
     private Integer tokens;
 

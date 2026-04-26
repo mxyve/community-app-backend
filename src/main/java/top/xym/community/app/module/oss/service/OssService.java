@@ -170,7 +170,7 @@ public class OssService {
         }
 
         // 放在 /chat/ 目录下，方便后续统一清理
-        String fileName = "chat/" + UUID.randomUUID() + suffix;
+        String fileName = "community/chat/" + UUID.randomUUID() + suffix;
 
         try (InputStream inputStream = file.getInputStream()) {
             OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);

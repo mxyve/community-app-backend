@@ -56,4 +56,7 @@ public class MessageSendRequest {
         @Schema(description = "附件大小（单位：字节）", example = "204800")
         private Long size;
     }
+
+    // 前端传语音base64
+    private String audio;
 }

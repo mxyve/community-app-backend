@@ -29,6 +29,9 @@ public class MessageResponse {
     @Schema(description = "消息内容", example = "什么是Spring Boot？请详细说明核心特性")
     private String content;
 
+    @Schema(description = "语音")
+    private String audio;
+
     @Schema(description = "所用AI模型名称", example = "qwen-turbo")
     private String modelName;
 

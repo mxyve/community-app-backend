@@ -29,4 +29,7 @@ public class MessageResponse {
     // 扩展字段
     private String senderName;
     private String senderAvatar;
+
+    // AI回答语音base64
+    private String aiAudio;
 }

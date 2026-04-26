@@ -3,7 +3,19 @@ package top.xym.community.app.module.message.service;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.alibaba.cloud.ai.dashscope.chat.MessageFormat;
 import com.alibaba.cloud.ai.dashscope.common.DashScopeApiConstants;
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
+import com.aliyuncs.CommonRequest;
+import com.aliyuncs.CommonResponse;
+import com.aliyuncs.DefaultAcsClient;
+import com.aliyuncs.IAcsClient;
+import com.aliyuncs.exceptions.ClientException;
+import com.aliyuncs.http.MethodType;
+import com.aliyuncs.http.ProtocolType;
+import com.aliyuncs.profile.DefaultProfile;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -15,6 +27,7 @@ import org.springframework.ai.content.Media;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
@@ -28,12 +41,21 @@ import top.xym.community.app.module.session.model.dto.SessionResponse;
 import top.xym.community.app.module.session.model.dto.SessionUpdateTitleRequest;
 import top.xym.community.app.module.session.service.SessionService;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
 
 /**
  * 消息服务：处理用户消息发送、AI流式响应、消息存储与查询
@@ -45,7 +67,6 @@ public class MessageService {
     private final ChatMessageMapper chatMessageMapper;
     private final SessionService sessionService;
     private final ChatModel chatModel;
-    private final DashScopeChatOptions dashScopeChatOptions;
 
     // 新增注入
     private final VectorStore vectorStore;
@@ -61,6 +82,13 @@ public class MessageService {
      * 特性：片段合并、完整内容保存、会话最后消息更新、异常处理
      */
     public Flux<String> sendMessageStream(MessageSendRequest request, Long userId) {
+        // ==================== 语音输入识别（新增） ====================
+        if (request.getAudio() != null && !request.getAudio().isEmpty()) {
+            byte[] audio = java.util.Base64.getDecoder().decode(request.getAudio());
+            String userText = speechToText(audio);
+            request.setContent(userText);
+        }
+
         AtomicLong assistantMessageId = new AtomicLong(0);
         AtomicReference<StringBuilder> fullContentRef = new AtomicReference<>(new StringBuilder());
         try {
@@ -109,19 +137,34 @@ public class MessageService {
                     // 之前这里会每次合并片段后更新lastMessage，导致最终只保留最后一个片段
                     // 关键修改：移除此处的 sessionService.updateLastMessage 调用
                     // 步骤5：流式响应完成后，更新助手消息完整内容 + 会话最后消息（完整内容）
-                    .doOnComplete(() -> {
-                        String fullText = fullContentRef.get().toString();
-                        autoGenerateSessionTitle(request.getSessionId(), userId, fullText);
-                        // 新增：流式结束后，用完整内容更新会话lastMessage
-                        updateSessionLastMessage(request.getSessionId(), fullText);
-                        updateAssistantMessageFullContent(assistantMessageId.get(), fullText, "completed");
-                    })
+                    .concatWith(Flux.create(sink -> {
+                        try {
+                            String fullText = fullContentRef.get().toString();
+                            byte[] aiAudioBytes = textToSpeech(fullText);
+                            String aiAudioBase64 = java.util.Base64.getEncoder().encodeToString(aiAudioBytes);
+
+                            // 拼接JSON并返回给前端
+                            String resultJson = "{\"text\":\"" + fullText.replace("\n", "\\n").replace("\"", "\\\"") + "\",\"audio\":\"" + aiAudioBase64 + "\"}";
+
+                            // ✅ 发射给前端
+                            sink.next(resultJson);
+                            sink.complete();
+
+                            // 保存数据库
+                            updateAssistantMessageFullContent(assistantMessageId.get(), fullText, "completed", aiAudioBase64);
+                            updateSessionLastMessage(request.getSessionId(), fullText);
+                            autoGenerateSessionTitle(request.getSessionId(), userId, fullText);
+                        } catch (Exception e) {
+                            sink.error(e);
+                            e.printStackTrace();
+                        }
+                    }))
                     .doOnError(error -> {
                         String errorText = "AI响应失败：" + error.getMessage();
                         fullContentRef.get().append(errorText);
                         // 异常时也用完整错误信息更新会话lastMessage
                         updateSessionLastMessage(request.getSessionId(), errorText);
-                        updateAssistantMessageFullContent(assistantMessageId.get(), errorText, "failed");
+                        updateAssistantMessageFullContent(assistantMessageId.get(), errorText, "failed", "");
                     });
         } catch (Exception e) {
             return Flux.error(new RuntimeException("流式请求初始化失败：" + e.getMessage()));
@@ -156,8 +199,8 @@ public class MessageService {
                 .orderByAsc(ChatMessage::getCreateTime);
 
         // 3. 执行分页查询（MyBatis-Plus语法）
-        com.baomidou.mybatisplus.extension.plugins.pagination.Page<ChatMessage> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size);
-        com.baomidou.mybatisplus.extension.plugins.pagination.Page<ChatMessage> messagePage = chatMessageMapper.selectPage(page, queryWrapper);
+        Page<ChatMessage> page = new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size);
+        Page<ChatMessage> messagePage = chatMessageMapper.selectPage(page, queryWrapper);
 
         // 4. 转换为响应DTO
         return messagePage.getRecords().stream()
@@ -311,7 +354,7 @@ public class MessageService {
     /**
      * 流式响应结束后，更新助手消息的完整内容和状态
      */
-    public void updateAssistantMessageFullContent(Long messageId, String fullContent, String status) {
+    public void updateAssistantMessageFullContent(Long messageId, String fullContent, String status, String audioBase64) {
         if (messageId == 0) {
             return;
         }
@@ -320,6 +363,9 @@ public class MessageService {
         ChatMessage updateMsg = new ChatMessage();
         updateMsg.setId(messageId);
         updateMsg.setContent(fullContent); // 保存完整内容
+        if (audioBase64 != null && !audioBase64.isEmpty()) {
+            updateMsg.setAudio(audioBase64);
+        }
         updateMsg.setStatus("completed".equals(status) ? 1 : 2); // 1-成功，2-失败
         updateMsg.setUpdateTime(LocalDateTime.now());
 
@@ -366,6 +412,7 @@ public class MessageService {
                 chatMessage.getUserId(),
                 chatMessage.getRole(),
                 chatMessage.getContent(),
+                chatMessage.getAudio(),
                 chatMessage.getModelName(),
                 chatMessage.getImageUrls(),
                 null, // tokens：ChatMessage 无该字段，设为 null
@@ -377,9 +424,174 @@ public class MessageService {
                 chatMessage.getCreateTime(),
                 chatMessage.getUpdateTime()
         );
+        response.setAudio(chatMessage.getAudio());
         // 调用状态转换方法，设置 statusDesc
         response.setStatusDesc(chatMessage.getStatus());
         return response;
+    }
+
+    // ==================== 阿里云语音配置 ====================
+    @Value("${aliyun.oss.accessKeyId}")
+    private String accessKeyId;
+
+    @Value("${aliyun.oss.accessKeySecret}")
+    private String accessKeySecret;
+
+    // 你提供的APPKEY
+    private final String NLS_APP_KEY = "3OpIBd1uEnBKO139";
+
+    // 缓存阿里云Token（避免频繁申请）
+    private String nlsToken;
+    // 缓存Token过期时间
+    private long tokenExpireTime;
+
+    /**
+     * 阿里云官方标准：获取语音服务访问 Token（长期稳定版）
+     */
+    public String getNlsToken() {
+        if (nlsToken != null && System.currentTimeMillis() < tokenExpireTime) {
+            return nlsToken;
+        }
+
+        try {
+            String regionId = "cn-shanghai";
+            String domain = "nls-meta.cn-shanghai.aliyuncs.com";
+            String version = "2019-02-28";
+            String action = "CreateToken";
+
+            DefaultProfile profile = DefaultProfile.getProfile(regionId, accessKeyId, accessKeySecret);
+            IAcsClient client = new DefaultAcsClient(profile);
+
+            CommonRequest request = new CommonRequest();
+            request.setDomain(domain);
+            request.setVersion(version);
+            request.setAction(action);
+            request.setMethod(MethodType.GET);
+            request.setProtocol(ProtocolType.HTTPS);
+
+            CommonResponse response = client.getCommonResponse(request);
+            String data = response.getData();
+
+            // 关键：打印阿里云返回的真实内容
+            System.out.println("阿里云返回：" + data);
+
+            JSONObject json = JSON.parseObject(data);
+            // 兼容错误结构
+            if (json.containsKey("Token")) {
+                nlsToken = json.getJSONObject("Token").getString("Id");
+                long expireTime = json.getJSONObject("Token").getLong("ExpireTime");
+                tokenExpireTime = expireTime * 1000 - 120000;
+            } else {
+                throw new RuntimeException("获取Token失败，返回：" + data);
+            }
+
+            System.out.println("✅ Token获取成功：" + nlsToken);
+            return nlsToken;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("获取Token失败：" + e.getMessage());
+        }
+    }
+
+    // ========================== 语音识别（音频 → 文字）==========================
+    public String speechToText(byte[] audioBytes) {
+        System.out.println("收到音频数据，大小：" + (audioBytes != null ? audioBytes.length : 0) + " 字节");
+        try {
+            String token = getNlsToken();
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) new java.net.URL("https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/asr").openConnection();
+            conn.setRequestMethod("POST");
+            // ✅ 修改 Content-Type 支持 mp3
+            conn.setRequestProperty("Content-Type", "audio/mp3;rate=16000");
+            conn.setRequestProperty("X-NLS-Token", token);
+            conn.setRequestProperty("X-NLS-Appkey", NLS_APP_KEY);
+            conn.setDoOutput(true);
+
+            conn.getOutputStream().write(audioBytes);
+
+            // 检查响应状态
+            int responseCode = conn.getResponseCode();
+            if (responseCode != 200) {
+                try (InputStream errorStream = conn.getErrorStream()) {
+                    if (errorStream != null) {
+                        String errorMsg = new String(errorStream.readAllBytes(), StandardCharsets.UTF_8);
+                        System.err.println("ASR错误响应：" + errorMsg);
+                        throw new RuntimeException("语音识别失败：" + errorMsg);
+                    }
+                }
+                throw new RuntimeException("语音识别失败，HTTP状态码：" + responseCode);
+            }
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                result.append(line);
+            }
+
+            System.out.println("ASR响应：" + result.toString());
+
+            com.google.gson.JsonObject json = new com.google.gson.JsonParser().parse(result.toString()).getAsJsonObject();
+            if (json.has("result")) {
+                return json.get("result").getAsString();
+            } else if (json.has("error")) {
+                throw new RuntimeException("语音识别错误：" + json.get("error").getAsString());
+            }
+            return "";
+        } catch (Exception e) {
+            throw new RuntimeException("语音识别失败：" + e.getMessage(), e);
+        }
+    }
+
+    // ========================== 语音合成（文字 → 音频）==========================
+    public byte[] textToSpeech(String text) {
+        try {
+            if (text == null || text.isBlank()) {
+                return new byte[0];
+            }
+
+            String token = getNlsToken();
+            URL url = new URL("https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/tts");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("X-NLS-Token", token);
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10000);
+            conn.setReadTimeout(10000);
+
+            // 国内站正确格式：直接传参，不需要 payload 嵌套
+            JSONObject params = new JSONObject();
+            params.put("appkey", NLS_APP_KEY);
+            params.put("text", text);
+            params.put("voice", "xiaoyun");
+            params.put("format", "mp3");
+            params.put("sample_rate", 16000);
+            params.put("volume", 50);
+            params.put("speed", 0);
+            params.put("pitch", 0);
+
+            String json = params.toString();
+            conn.getOutputStream().write(json.getBytes(StandardCharsets.UTF_8));
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode != 200) {
+                try (InputStream errorStream = conn.getErrorStream()) {
+                    if (errorStream != null) {
+                        String errorMsg = new String(errorStream.readAllBytes(), StandardCharsets.UTF_8);
+                        System.err.println("阿里云TTS错误响应：" + errorMsg);
+                    }
+                }
+                throw new RuntimeException("语音合成接口返回状态码：" + responseCode);
+            }
+
+            try (InputStream in = conn.getInputStream()) {
+                return in.readAllBytes();
+            }
+        } catch (Exception e) {
+            System.err.println("语音合成异常：" + e.getMessage());
+            return new byte[0];
+        }
     }
 
 }

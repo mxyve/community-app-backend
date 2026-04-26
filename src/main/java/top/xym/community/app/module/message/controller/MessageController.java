@@ -1,6 +1,9 @@
 package top.xym.community.app.module.message.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Parameters;
+import io.swagger.v3.oas.annotations.media.Content;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
@@ -66,8 +69,14 @@ public class MessageController {
      /**
       * 批量上传聊天图片
       */
-     @PostMapping("/me/image/chat")
+     @PostMapping(
+             value = "/me/image/chat",
+             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+     )
      @Operation(summary = "批量上传聊天图片")
+     @Parameters({
+             @Parameter(name = "files", description = "图片文件", required = true, content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE))
+     })
      public Result<List<String>> uploadChatImages(@RequestParam List<MultipartFile> files) {
          List<String> urls = ossService.uploadChatImages(files);
          return Result.success(urls);
