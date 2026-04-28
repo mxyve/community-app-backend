@@ -201,4 +201,45 @@ public class OssService {
                 .map(this::uploadChatImage)   // 复用你已有的单文件方法
                 .toList();
     }
+
+    /**
+     * 上传服务评论/评价图片
+     */
+    public String uploadCommentImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new ServerException("图片不能为空");
+        }
+
+        // 大小校验
+        long maxSize = parseFileSize(maxFileSize);
+        if (file.getSize() > maxSize) {
+            throw new ServerException("图片不能超过" + maxFileSize);
+        }
+
+        // 格式校验
+        String originalFilename = file.getOriginalFilename();
+        String suffix = originalFilename.substring(originalFilename.lastIndexOf(".")).toLowerCase();
+        if (!checkFileSuffix(suffix)) {
+            throw new ServerException("仅支持：" + allowedTypes);
+        }
+
+        // 存储路径：comment/xxx.jpg
+        String fileName = "community/service/comment/" + UUID.randomUUID() + suffix;
+
+        try (InputStream inputStream = file.getInputStream()) {
+            OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentType(getContentType(suffix));
+            metadata.setContentLength(file.getSize());
+
+            ossClient.putObject(bucketName, fileName, inputStream, metadata);
+            String publicUrl = "https://" + bucketName + "." + endpoint + "/" + fileName;
+
+            ossClient.shutdown();
+            return publicUrl;
+        } catch (Exception e) {
+            log.error("评论图片上传失败", e);
+            throw new ServerException("图片上传失败");
+        }
+    }
 }
