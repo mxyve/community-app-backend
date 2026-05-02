@@ -1,5 +1,6 @@
 package top.xym.community.app.module.message.service;
 
+import cn.hutool.core.collection.CollUtil;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.alibaba.cloud.ai.dashscope.chat.MessageFormat;
 import com.alibaba.cloud.ai.dashscope.common.DashScopeApiConstants;
@@ -9,14 +10,13 @@ import com.aliyuncs.CommonRequest;
 import com.aliyuncs.CommonResponse;
 import com.aliyuncs.DefaultAcsClient;
 import com.aliyuncs.IAcsClient;
-import com.aliyuncs.exceptions.ClientException;
 import com.aliyuncs.http.MethodType;
 import com.aliyuncs.http.ProtocolType;
 import com.aliyuncs.profile.DefaultProfile;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.google.gson.Gson;
 import lombok.RequiredArgsConstructor;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -24,19 +24,20 @@ import org.springframework.ai.chat.model.ChatModel;
 
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.MimeTypeUtils;
-import reactor.core.publisher.Flux;
 
+import top.xym.community.app.mapper.UserMapper;
+import top.xym.community.app.model.entity.User;
 import top.xym.community.app.module.message.mapper.ChatMessageMapper;
 import top.xym.community.app.module.message.model.dto.MessageResponse;
 import top.xym.community.app.module.message.model.dto.MessageSendRequest;
 import top.xym.community.app.module.message.model.entity.ChatMessage;
+import top.xym.community.app.module.message.tool.CommunityKnowledgeTool;
+import top.xym.community.app.module.message.tool.CommunityServiceTool;
+import top.xym.community.app.module.message.tool.OrderTool;
 import top.xym.community.app.module.session.model.dto.SessionResponse;
 import top.xym.community.app.module.session.model.dto.SessionUpdateTitleRequest;
 import top.xym.community.app.module.session.service.SessionService;
@@ -46,15 +47,14 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import static io.micrometer.core.instrument.util.StringEscapeUtils.escapeJson;
 
 
 /**
@@ -68,106 +68,171 @@ public class MessageService {
     private final SessionService sessionService;
     private final ChatModel chatModel;
 
-    // 新增注入
-    private final VectorStore vectorStore;
-    private final AliOssFileService aliOssFileService;
+    private final UserMapper userMapper;
 
-    // 常量
-    private static final double SIMILARITY_THRESHOLD = 0.4;
-    private static final int TOP_K = 5;
-    private static final int MAX_DOC_LENGTH = 1500;
+    private final CommunityServiceTool communityServiceTool;
+    private final CommunityKnowledgeTool communityKnowledgeTool;
+
+    private ChatClient chatClient;
+
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        this.chatClient = ChatClient.builder(chatModel)
+                .defaultTools(communityServiceTool, communityKnowledgeTool)
+                .build();
+    }
 
     /**
-     * 发送消息并获取AI流式响应（核心方法）
-     * 特性：片段合并、完整内容保存、会话最后消息更新、异常处理
+     * 发送消息（非流式，一次性返回）
      */
-    public Flux<String> sendMessageStream(MessageSendRequest request, Long userId) {
-        // ==================== 语音输入识别（新增） ====================
+    public String sendMessageStream(MessageSendRequest request, Long userId) {
+        // ==================== 语音输入识别 ====================
         if (request.getAudio() != null && !request.getAudio().isEmpty()) {
             byte[] audio = java.util.Base64.getDecoder().decode(request.getAudio());
             String userText = speechToText(audio);
             request.setContent(userText);
         }
 
-        AtomicLong assistantMessageId = new AtomicLong(0);
-        AtomicReference<StringBuilder> fullContentRef = new AtomicReference<>(new StringBuilder());
         try {
             validateSession(request.getSessionId(), userId);
+
+            // 先查用户
+            User user = userMapper.selectById(userId);
+
+            // AI提取用户输入的地址
+            List<String> address = extractProvinceCityDistrict(request.getContent());
+            String province = address.get(0);
+            String city = address.get(1);
+            String district = address.get(2);
+
+            // 最终规则：
+            // 用户给了任何地址 → 纯用用户的
+            // 用户完全没给地址 → 用数据库的
+            boolean userNotProvideAnyAddress = (province == null && city == null && district == null);
+            if (userNotProvideAnyAddress) {
+                province = user.getProvince();
+                city = user.getCity();
+                district = user.getDistrict();
+            }
+
             saveUserMessage(request, userId);
 
+            // ======================
+            // 普通对话 → 一次性返回 { text, audio }
+            // ======================
             List<String> imageUrlList = new ArrayList<>();
-            // 从 request 中获取附件列表，过滤出图片类型的URL
             if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
                 for (MessageSendRequest.MessageAttachmentDTO attachment : request.getAttachments()) {
-                    // 只处理 image 类型的附件
                     if ("image".equalsIgnoreCase(attachment.getType())) {
                         imageUrlList.add(attachment.getUrl());
                     }
                 }
             }
-            Prompt prompt = buildPrompt(request.getContent(), imageUrlList);
+
+            Prompt prompt = buildPrompt(request.getContent(), imageUrlList,
+                    request.getSessionId(), province, city, district);
+
+            // 同步获取完整回答
+            String fullText;
+            boolean isServiceRequest = false;
+
+            try {
+                // 第一步：让AI只做意图判断（超轻量，不会超时）
+                String intentPrompt = """
+                    你只需要回答【yes】或【no】
+                    规则：
+                    1. 用户要【查找服务、推荐服务、附近服务、有什么服务】→ 回答 yes
+                    2. 其他所有问题 → 回答 no
+                    3. 只允许回答一个单词：yes 或 no
+                    用户问题：%s
+                """.formatted(request.getContent());
+
+                String intent = chatClient.prompt(intentPrompt).call().content().trim().toLowerCase();
+                isServiceRequest = "yes".equals(intent);
+
+                // 第二步：如果是查服务 → 直接返回JSON
+                if (isServiceRequest) {
+                    fullText = communityServiceTool.queryCommunityService(
+                            userId, province, city, district, request.getContent()
+                    );
+                } else {
+                    // 正常对话（图片、问题、聊天都走这里）
+                    fullText = chatClient.prompt(prompt).call().content();
+                }
+
+            } catch (Exception e) {
+                // AI报错 → 直接返回错误，不返回服务列表！
+                fullText = "抱歉，我暂时无法回答你的问题，请稍后再试。";
+            }
+
+            // 服务JSON不合成语音，普通对话才语音
+            byte[] aiAudioBytes = new byte[0];
+            String aiAudioBase64 = "";
+            if (!fullText.trim().startsWith("[")) {
+                aiAudioBytes = textToSpeech(fullText);
+                aiAudioBase64 = java.util.Base64.getEncoder().encodeToString(aiAudioBytes);
+            }
+
+            // 保存消息
             ChatMessage assistantMessage = saveAssistantMessageTemp(request, userId);
-            assistantMessageId.set(assistantMessage.getId());
-            return chatModel.stream(prompt)
-                    .doOnNext(cr -> {
-                        System.out.println(">>>> meta = " + cr.getMetadata());
-                        if (cr.getResult() != null && cr.getResult().getMetadata() != null) {
-                            System.out.println(">>>> finishReason = " +
-                                    cr.getResult().getMetadata().getFinishReason());
-                        }
-                    })
-                    .map(chatResponse -> {
-                        if (chatResponse.getResult() == null ||
-                                chatResponse.getResult().getOutput() == null) {
-                            return "";          // 保证非 null
-                        }
-                        String text = chatResponse.getResult().getOutput().getText();
-                        return text == null ? "" : text;
-                    })
-                    .doOnNext(chunk -> System.out.println(">>>> chunk(len=" + chunk.length() + "): " + chunk))
-                    .bufferTimeout(20, java.time.Duration.ofMillis(300))
-                    .map(fragments -> String.join("", fragments))
-//                    .filter(mergedContent -> !mergedContent.isEmpty())
-                    // 步骤3：累积片段到完整内容（用于最终保存）
-                    .doOnNext(mergedContent -> {
-                        fullContentRef.get().append(mergedContent);
-                    })
-                    .doOnNext(chunk -> System.out.println(">>>> chunk: " + chunk))
-                    // 删除中间片段更新会话的逻辑！！！
-                    // 之前这里会每次合并片段后更新lastMessage，导致最终只保留最后一个片段
-                    // 关键修改：移除此处的 sessionService.updateLastMessage 调用
-                    // 步骤5：流式响应完成后，更新助手消息完整内容 + 会话最后消息（完整内容）
-                    .concatWith(Flux.create(sink -> {
-                        try {
-                            String fullText = fullContentRef.get().toString();
-                            byte[] aiAudioBytes = textToSpeech(fullText);
-                            String aiAudioBase64 = java.util.Base64.getEncoder().encodeToString(aiAudioBytes);
+            updateAssistantMessageFullContent(assistantMessage.getId(), fullText, "completed", aiAudioBase64);
+            updateSessionLastMessage(request.getSessionId(), fullText);
+            autoGenerateSessionTitle(request.getSessionId(), userId, fullText);
 
-                            // 拼接JSON并返回给前端
-                            String resultJson = "{\"text\":\"" + fullText.replace("\n", "\\n").replace("\"", "\\\"") + "\",\"audio\":\"" + aiAudioBase64 + "\"}";
+            // 服务卡片直接返回JSON数组，普通对话返回 {text,audio}
+            if (fullText.trim().startsWith("[")) {
+                return fullText;
+            } else {
+                return "{\"text\":\"" + escapeJson(fullText) + "\",\"audio\":\"" + aiAudioBase64 + "\"}";
+            }
 
-                            // ✅ 发射给前端
-                            sink.next(resultJson);
-                            sink.complete();
-
-                            // 保存数据库
-                            updateAssistantMessageFullContent(assistantMessageId.get(), fullText, "completed", aiAudioBase64);
-                            updateSessionLastMessage(request.getSessionId(), fullText);
-                            autoGenerateSessionTitle(request.getSessionId(), userId, fullText);
-                        } catch (Exception e) {
-                            sink.error(e);
-                            e.printStackTrace();
-                        }
-                    }))
-                    .doOnError(error -> {
-                        String errorText = "AI响应失败：" + error.getMessage();
-                        fullContentRef.get().append(errorText);
-                        // 异常时也用完整错误信息更新会话lastMessage
-                        updateSessionLastMessage(request.getSessionId(), errorText);
-                        updateAssistantMessageFullContent(assistantMessageId.get(), errorText, "failed", "");
-                    });
         } catch (Exception e) {
-            return Flux.error(new RuntimeException("流式请求初始化失败：" + e.getMessage()));
+            throw new RuntimeException("请求失败：" + e.getMessage());
+        }
+    }
+
+    /**
+     * 智能提取地址：
+     * 支持：省、省市、省市区
+     * 提取不到 → 返回 [null, null, null]
+     */
+    private List<String> extractProvinceCityDistrict(String userText) {
+        if (userText == null || userText.isBlank()) {
+            return Arrays.asList(null, null, null);
+        }
+
+        try {
+            // 超级严格指令！！！
+            String prompt = """
+                任务：从用户输入里提取【省、市、区】
+                规则【必须严格遵守，违反会导致严重错误】：
+                1. 用户没提到的，必须填空，不能自己编、不能自己猜、不能自己补！
+                2. 只提取用户明确说的内容
+                3. 必须严格按格式返回，只返回这一行，不要其他任何文字
+                格式：省,市,区
+                现在提取用户输入：%s
+            """.formatted(userText);
+
+            String result = chatClient.prompt(prompt).call().content().trim();
+
+            if (result == null || result.isBlank()) {
+                return Arrays.asList(null, null, null);
+            }
+
+            String[] parts = result.split(",", -1);
+            String province = parts.length > 0 ? parts[0].trim() : null;
+            String city = parts.length > 1 ? parts[1].trim() : null;
+            String district = parts.length > 2 ? parts[2].trim() : null;
+
+            // 空字符串 → 转 null
+            province = province.isEmpty() ? null : province;
+            city = city.isEmpty() ? null : city;
+            district = district.isEmpty() ? null : district;
+
+            return Arrays.asList(province, city, district);
+
+        } catch (Exception e) {
+            return Arrays.asList(null, null, null);
         }
     }
 
@@ -222,52 +287,58 @@ public class MessageService {
     /**
      * 构建 RAG 增强提示词（带向量检索 + 知识库过滤）
      */
-    private Prompt buildPrompt(String userContent, List<String> imageUrlList) {
+    private Prompt buildPrompt(String userContent, List<String> imageUrlList, Long sessionId,
+                               String province, String city, String district) {
+        List<ChatMessage> historyMessages = chatMessageMapper.selectList(
+                new LambdaQueryWrapper<ChatMessage>()
+                        .eq(ChatMessage::getSessionId, sessionId)
+                        .eq(ChatMessage::getDeleted, 0)
+                        .orderByAsc(ChatMessage::getCreateTime)
+                        // 最近5条记忆，防止过长
+                        .last("LIMIT 5")
+        );
+
         List<Message> messages = new ArrayList<>();
 
-        // ====================== RAG 核心：向量检索 ======================
-        String enhancedUserMessage = userContent;
-        try {
-            // 1. 向量检索
-            SearchRequest searchRequest = SearchRequest.builder()
-                    .query(userContent)
-                    .topK(TOP_K)
-                    .similarityThreshold(SIMILARITY_THRESHOLD)
-                    .build();
-            List<Document> docs = vectorStore.similaritySearch(searchRequest);
-
-            // 2. 只保留启用的文档
-            List<String> enabledVectorIds = aliOssFileService.listEnabledVectorIds();
-            docs = docs.stream().filter(doc -> enabledVectorIds.contains(doc.getId())).toList();
-
-            // 3. 构建增强提示词
-            if (!docs.isEmpty()) {
-                StringBuilder sb = new StringBuilder();
-                sb.append("【社区知识库参考资料】\n");
-                for (int i = 0; i < docs.size(); i++) {
-                    String content = cleanDocumentContent(docs.get(i).getText());
-                    sb.append(i + 1).append(". ").append(content).append("\n");
-                }
-                sb.append("\n请只根据以上资料回答，不知道就说不知道。\n");
-                sb.append("用户问题：").append(userContent);
-                enhancedUserMessage = sb.toString();
+        // 把历史消息加入 prompt
+        for (ChatMessage msg : historyMessages) {
+            if ("user".equals(msg.getRole())) {
+                messages.add(new UserMessage(msg.getContent()));
+            } else if ("assistant".equals(msg.getRole())) {
+                messages.add(new org.springframework.ai.chat.messages.AssistantMessage(msg.getContent()));
             }
-        } catch (Exception e) {
-            // 检索失败不影响对话
-            System.err.println("RAG 检索失败：" + e.getMessage());
         }
 
-        // ====================== 系统消息 ======================
-        messages.add(new SystemMessage("你是智能社区AI助手，回答简洁准确，基于知识库回答。"));
+        String enhancedUserMessage = userContent;
 
-        // ====================== 图片处理（你原有逻辑不变） ======================
+        // ====================== 智能体系统指令 ======================
+        messages.add(new SystemMessage("""
+            你是智能社区服务助手，严格遵守：
+            
+            1. 用户【找服务、查服务、推荐服务、附近服务】
+               → 调用 CommunityServiceTool
+               → 必须【原封不动返回工具的JSON数组】，不能加任何文字，不能解释
+            
+            2. 用户【问怎么下单、怎么预约、流程、问题、聊天、问候】
+               → 不要调用任何工具
+               → 直接用自然语言友好回答
+            
+            3. 用户【问社区知识、政策、公告】
+               → 调用 CommunityKnowledgeTool
+               → 用自然语言回答
+            
+            4. 绝对不能把JSON改成文字，必须原样返回给前端渲染卡片
+            
+            用户地区：%s %s %s
+        """.formatted(province, city, district)));
+
+        // ====================== 图片处理 ======================
         List<Media> mediaList = new ArrayList<>();
         if (imageUrlList != null && !imageUrlList.isEmpty()) {
             for (String imageUrl : imageUrlList) {
                 try {
                     Media media = new Media(
-                            imageUrl.toLowerCase().endsWith("jpg") || imageUrl.toLowerCase().endsWith("jpeg")
-                                    ? MimeTypeUtils.IMAGE_JPEG : MimeTypeUtils.IMAGE_PNG,
+                            imageUrl.toLowerCase().endsWith("jpeg") ? MimeTypeUtils.IMAGE_JPEG : MimeTypeUtils.IMAGE_PNG,
                             new UrlResource(imageUrl.trim())
                     );
                     mediaList.add(media);
@@ -275,37 +346,28 @@ public class MessageService {
             }
         }
 
-        // ====================== 用户消息（RAG 增强） ======================
+        // ====================== 用户消息 ======================
         UserMessage userMessage = UserMessage.builder()
                 .text(enhancedUserMessage)
                 .media(mediaList)
                 .build();
 
-        if (!mediaList.isEmpty()) {
+        if (CollUtil.isNotEmpty(mediaList)) {
             userMessage.getMetadata().put(DashScopeApiConstants.MESSAGE_FORMAT, MessageFormat.IMAGE);
         }
-
         messages.add(userMessage);
 
-        // 模型选择（原图生逻辑）
-        String model = mediaList.isEmpty() ? "qwen-plus" : "qwen-vl-max-latest";
+        boolean hasImage = !mediaList.isEmpty();
+
         DashScopeChatOptions options = DashScopeChatOptions.builder()
-                .withModel(model)
-                .withMultiModel(!mediaList.isEmpty())
+                .withModel(hasImage ? "qwen-vl-max-latest" : "qwen-plus")
+                .withMultiModel(hasImage)
                 .withVlHighResolutionImages(true)
                 .withTemperature(0.2)
                 .withTopP(0.6)
                 .build();
 
         return new Prompt(messages, options);
-    }
-
-    private String cleanDocumentContent(String rawContent) {
-        String cleaned = rawContent.replaceAll("===== Page \\d+ =====", "").trim();
-        if (cleaned.length() > MAX_DOC_LENGTH) {
-            cleaned = cleaned.substring(0, MAX_DOC_LENGTH) + "...";
-        }
-        return cleaned;
     }
 
     /**

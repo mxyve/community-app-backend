@@ -35,19 +35,18 @@ public class MessageController {
     // 流式发送消息接口
     @PostMapping(
             value = "/stream",
-            produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8",
+            produces = MediaType.APPLICATION_JSON_VALUE + ";charset=UTF-8",
             consumes = MediaType.APPLICATION_JSON_VALUE
     )
-    @Operation(summary = "流式发送消息")
-    public Flux<String> sendMessageStream(
+    @Operation(summary = "发送消息（非流式）")
+    public Result<String> sendMessageStream(
             @RequestBody MessageSendRequest request,
             HttpServletResponse response
     ) {
         response.setCharacterEncoding("UTF-8");
-
         Long userId = SecurityUtils.getCurrentUserId();
-
-        return messageService.sendMessageStream(request, userId);
+        String result = messageService.sendMessageStream(request, userId);
+        return Result.success(result);
     }
 
     /**

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="top.xym.community.app.module.message.mapper.AppCommunityServiceMapper">
+
+    <select id="selectNearbyHighScoreService" resultType="top.xym.community.app.module.message.model.vo.ServiceVO">
+        SELECT
+            s.id,
+            s.name AS serviceName,
+            s.base_price AS price,
+            s.service_area AS serviceArea,
+            m.name AS merchantName,
+            IFNULL(AVG(c.star), 0.0) AS avgStar,
+            s.cover_image AS coverImage,
+            s.subtitle AS description,
+            s.id AS serviceId
+        FROM
+            services s
+        LEFT JOIN
+            service_comment c ON s.id = c.service_id
+        LEFT JOIN
+            service_merchant m ON s.merchant_id = m.id
+        WHERE
+            s.deleted = 0
+        AND (
+            JSON_CONTAINS(s.service_area, CONCAT('"', #{district}, '"'))
+            OR JSON_CONTAINS(s.service_area, CONCAT('"', #{city}, '"'))
+            OR JSON_CONTAINS(s.service_area, CONCAT('"', #{province}, '"'))
+            OR JSON_CONTAINS(s.service_area, '"全国"')
+        )
+        GROUP BY
+            s.id, s.name, s.base_price, s.service_area, m.name
+        ORDER BY
+            avgStar DESC,
+        CASE
+            WHEN JSON_CONTAINS(s.service_area, CONCAT('"', #{district}, '"')) THEN 1
+            WHEN JSON_CONTAINS(s.service_area, CONCAT('"', #{city}, '"')) THEN 2
+            WHEN JSON_CONTAINS(s.service_area, CONCAT('"', #{province}, '"')) THEN 3
+            WHEN JSON_CONTAINS(s.service_area, '"全国"') THEN 4
+            ELSE 5
+        END ASC
+        LIMIT #{limit}
+    </select>
+
+</mapper>
