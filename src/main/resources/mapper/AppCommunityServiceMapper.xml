@@ -8,6 +8,7 @@
             s.name AS serviceName,
             s.base_price AS price,
             s.service_area AS serviceArea,
+            s.unit AS unit,
             m.name AS merchantName,
             IFNULL(AVG(c.star), 0.0) AS avgStar,
             s.cover_image AS coverImage,

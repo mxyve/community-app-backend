@@ -37,10 +37,12 @@ import top.xym.community.app.module.message.model.dto.MessageSendRequest;
 import top.xym.community.app.module.message.model.entity.ChatMessage;
 import top.xym.community.app.module.message.tool.CommunityKnowledgeTool;
 import top.xym.community.app.module.message.tool.CommunityServiceTool;
+
 import top.xym.community.app.module.message.tool.OrderTool;
 import top.xym.community.app.module.session.model.dto.SessionResponse;
 import top.xym.community.app.module.session.model.dto.SessionUpdateTitleRequest;
 import top.xym.community.app.module.session.service.SessionService;
+import top.xym.community.app.utils.SecurityUtils;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -52,6 +54,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import static io.micrometer.core.instrument.util.StringEscapeUtils.escapeJson;
@@ -72,13 +75,14 @@ public class MessageService {
 
     private final CommunityServiceTool communityServiceTool;
     private final CommunityKnowledgeTool communityKnowledgeTool;
+    private final OrderTool orderTool;
 
     private ChatClient chatClient;
 
     @jakarta.annotation.PostConstruct
     public void init() {
         this.chatClient = ChatClient.builder(chatModel)
-                .defaultTools(communityServiceTool, communityKnowledgeTool)
+                .defaultTools(communityServiceTool, communityKnowledgeTool, orderTool)
                 .build();
     }
 
@@ -86,7 +90,7 @@ public class MessageService {
      * 发送消息（非流式，一次性返回）
      */
     public String sendMessageStream(MessageSendRequest request, Long userId) {
-        // ==================== 语音输入识别 ====================
+        // 语音输入识别
         if (request.getAudio() != null && !request.getAudio().isEmpty()) {
             byte[] audio = java.util.Base64.getDecoder().decode(request.getAudio());
             String userText = speechToText(audio);
@@ -117,9 +121,7 @@ public class MessageService {
 
             saveUserMessage(request, userId);
 
-            // ======================
             // 普通对话 → 一次性返回 { text, audio }
-            // ======================
             List<String> imageUrlList = new ArrayList<>();
             if (request.getAttachments() != null && !request.getAttachments().isEmpty()) {
                 for (MessageSendRequest.MessageAttachmentDTO attachment : request.getAttachments()) {
@@ -131,32 +133,41 @@ public class MessageService {
 
             Prompt prompt = buildPrompt(request.getContent(), imageUrlList,
                     request.getSessionId(), province, city, district);
-
             // 同步获取完整回答
             String fullText;
-            boolean isServiceRequest = false;
 
             try {
-                // 第一步：让AI只做意图判断（超轻量，不会超时）
+                // 服务意图判断
                 String intentPrompt = """
-                    你只需要回答【yes】或【no】
-                    规则：
-                    1. 用户要【查找服务、推荐服务、附近服务、有什么服务】→ 回答 yes
-                    2. 其他所有问题 → 回答 no
-                    3. 只允许回答一个单词：yes 或 no
-                    用户问题：%s
-                """.formatted(request.getContent());
-
+                                你只需要回答【yes】或【no】
+                                规则：
+                                1. 用户要【查找服务、推荐服务、附近服务、有什么服务】→ 回答 yes
+                                2. 其他所有问题 → 回答 no
+                                3. 只允许回答一个单词：yes 或 no
+                                用户问题：%s
+                        """.formatted(request.getContent());
                 String intent = chatClient.prompt(intentPrompt).call().content().trim().toLowerCase();
-                isServiceRequest = "yes".equals(intent);
+                boolean isServiceRequest = "yes".equals(intent);
 
-                // 第二步：如果是查服务 → 直接返回JSON
+                // 订单意图判断
+                String orderIntentPrompt = """
+                                你只需要回答【yes】或【no】
+                                规则：
+                                1. 用户要【查订单、我的订单、取消订单、删除订单】→ yes
+                                2. 其他 → no
+                                用户问题：%s
+                        """.formatted(request.getContent());
+                boolean isOrderRequest = "yes".equals(chatClient.prompt(orderIntentPrompt).call().content().trim().toLowerCase());
+
+                // 最终三段逻辑
                 if (isServiceRequest) {
-                    fullText = communityServiceTool.queryCommunityService(
-                            userId, province, city, district, request.getContent()
-                    );
+                    // 查服务 → 直接JSON，不动原有逻辑
+                    fullText = communityServiceTool.queryCommunityService(userId, province, city, district, request.getContent());
+                } else if (isOrderRequest) {
+                    // 订单 → 走AI工具调用（会执行 OrderTool）
+                    fullText = chatClient.prompt(prompt).call().content();
                 } else {
-                    // 正常对话（图片、问题、聊天都走这里）
+                    // 普通聊天
                     fullText = chatClient.prompt(prompt).call().content();
                 }
 
@@ -165,25 +176,31 @@ public class MessageService {
                 fullText = "抱歉，我暂时无法回答你的问题，请稍后再试。";
             }
 
-            // 服务JSON不合成语音，普通对话才语音
-            byte[] aiAudioBytes = new byte[0];
-            String aiAudioBase64 = "";
-            if (!fullText.trim().startsWith("[")) {
-                aiAudioBytes = textToSpeech(fullText);
-                aiAudioBase64 = java.util.Base64.getEncoder().encodeToString(aiAudioBytes);
+            // 同步语音 + 长文本也支持 + 前端直接拿到
+            final ChatMessage assistantMessage = saveAssistantMessageTemp(request, userId);
+            final String finalFullText = fullText;
+
+            String audioBase64 = "";
+            try {
+                // 所有非JSON的回答，都合成语音
+                if (finalFullText != null && !finalFullText.trim().startsWith("[")) {
+                    byte[] audioBytes = textToSpeech(finalFullText);
+                    audioBase64 = java.util.Base64.getEncoder().encodeToString(audioBytes);
+                }
+            } catch (Exception e) {
+                System.err.println("语音合成警告：" + e.getMessage());
             }
 
-            // 保存消息
-            ChatMessage assistantMessage = saveAssistantMessageTemp(request, userId);
-            updateAssistantMessageFullContent(assistantMessage.getId(), fullText, "completed", aiAudioBase64);
-            updateSessionLastMessage(request.getSessionId(), fullText);
-            autoGenerateSessionTitle(request.getSessionId(), userId, fullText);
+            // 保存到数据库
+            updateAssistantMessageFullContent(assistantMessage.getId(), finalFullText, "completed", audioBase64);
+            updateSessionLastMessage(request.getSessionId(), finalFullText);
+            autoGenerateSessionTitle(request.getSessionId(), userId, finalFullText);
 
-            // 服务卡片直接返回JSON数组，普通对话返回 {text,audio}
-            if (fullText.trim().startsWith("[")) {
-                return fullText;
+            // 返回给前端：文字 + 真实语音
+            if (finalFullText.trim().startsWith("[")) {
+                return finalFullText;
             } else {
-                return "{\"text\":\"" + escapeJson(fullText) + "\",\"audio\":\"" + aiAudioBase64 + "\"}";
+                return "{\"text\":\"" + escapeJson(finalFullText) + "\",\"audio\":\"" + audioBase64 + "\"}";
             }
 
         } catch (Exception e) {
@@ -204,14 +221,14 @@ public class MessageService {
         try {
             // 超级严格指令！！！
             String prompt = """
-                任务：从用户输入里提取【省、市、区】
-                规则【必须严格遵守，违反会导致严重错误】：
-                1. 用户没提到的，必须填空，不能自己编、不能自己猜、不能自己补！
-                2. 只提取用户明确说的内容
-                3. 必须严格按格式返回，只返回这一行，不要其他任何文字
-                格式：省,市,区
-                现在提取用户输入：%s
-            """.formatted(userText);
+                        任务：从用户输入里提取【省、市、区】
+                        规则【必须严格遵守，违反会导致严重错误】：
+                        1. 用户没提到的，必须填空，不能自己编、不能自己猜、不能自己补！
+                        2. 只提取用户明确说的内容
+                        3. 必须严格按格式返回，只返回这一行，不要其他任何文字
+                        格式：省,市,区
+                        现在提取用户输入：%s
+                    """.formatted(userText);
 
             String result = chatClient.prompt(prompt).call().content().trim();
 
@@ -247,10 +264,11 @@ public class MessageService {
 
     /**
      * 分页查询会话内的消息历史（按创建时间升序）
+     *
      * @param sessionId 会话ID
-     * @param userId 用户ID（权限校验）
-     * @param current 页码（从1开始）
-     * @param size 每页条数
+     * @param userId    用户ID（权限校验）
+     * @param current   页码（从1开始）
+     * @param size      每页条数
      * @return 消息历史分页结果
      */
     public List<MessageResponse> getSessionMessages(Long sessionId, Long userId, Long current, Long size) {
@@ -313,24 +331,36 @@ public class MessageService {
 
         // ====================== 智能体系统指令 ======================
         messages.add(new SystemMessage("""
-            你是智能社区服务助手，严格遵守：
-            
-            1. 用户【找服务、查服务、推荐服务、附近服务】
-               → 调用 CommunityServiceTool
-               → 必须【原封不动返回工具的JSON数组】，不能加任何文字，不能解释
-            
-            2. 用户【问怎么下单、怎么预约、流程、问题、聊天、问候】
-               → 不要调用任何工具
-               → 直接用自然语言友好回答
-            
-            3. 用户【问社区知识、政策、公告】
-               → 调用 CommunityKnowledgeTool
-               → 用自然语言回答
-            
-            4. 绝对不能把JSON改成文字，必须原样返回给前端渲染卡片
-            
-            用户地区：%s %s %s
-        """.formatted(province, city, district)));
+                    你是智能社区服务助手，严格遵守：
+                    
+                    1. 用户【找服务、查服务、推荐服务、附近服务】
+                       → 调用 CommunityServiceTool
+                       → 必须【原封不动返回工具的JSON数组】，不能加任何文字，不能解释
+                    
+                    2. 用户【取消订单、删除订单、查订单、我的订单】
+                       → 【必须调用 OrderTool 工具】
+                       → 【绝对禁止自己回答、禁止假装操作】
+                       → 用自然语言回答
+                       
+                    3. 用户要【下单、创建订单、预约服务】
+                       → 必须通过多轮对话收集以下信息，缺一不可：
+                       ① 服务项目（服务ID/服务名称）
+                       ② 服务时间
+                       ③ 所在地区 + 详细地址
+                       ④ 联系人姓名
+                       ⑤ 联系电话
+                       ⑥ 备注说明（可选）
+                       → 收集完整后，必须列出订单信息，请用户明确说【确认】才能提交
+                       → 用户确认后，再调用 OrderTool.createOrder 创建订单
+                           
+                    4. 用户【问社区知识、政策、公告】
+                       → 调用 CommunityKnowledgeTool
+                       → 用自然语言回答
+                    
+                    5. 绝对不能把JSON改成文字，必须原样返回给前端渲染卡片
+                    
+                    用户地区：%s %s %s
+                """.formatted(province, city, district)));
 
         // ====================== 图片处理 ======================
         List<Media> mediaList = new ArrayList<>();
@@ -342,7 +372,8 @@ public class MessageService {
                             new UrlResource(imageUrl.trim())
                     );
                     mediaList.add(media);
-                } catch (Exception ignored) {}
+                } catch (Exception ignored) {
+                }
             }
         }
 
@@ -358,6 +389,8 @@ public class MessageService {
         messages.add(userMessage);
 
         boolean hasImage = !mediaList.isEmpty();
+
+        Long userId = SecurityUtils.getCurrentUserId();
 
         DashScopeChatOptions options = DashScopeChatOptions.builder()
                 .withModel(hasImage ? "qwen-vl-max-latest" : "qwen-plus")

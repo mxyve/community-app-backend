@@ -7,6 +7,8 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import top.xym.community.app.module.service.model.entity.PayServiceOrder;
 
+import java.util.List;
+
 public interface PayServiceOrderMapper extends BaseMapper<PayServiceOrder> {
 
     /**
@@ -19,5 +21,5 @@ public interface PayServiceOrderMapper extends BaseMapper<PayServiceOrder> {
      * 根据订单号查询支付状态
      */
     @Select("SELECT pay_status FROM pay_service_order WHERE order_no = #{orderNo}")
-    Integer getPayStatus(@Param("orderNo") String orderNo);
+    List<Integer> getPayStatus(@Param("orderNo") String orderNo);
 }

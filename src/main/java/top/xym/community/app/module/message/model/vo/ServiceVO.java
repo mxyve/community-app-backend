@@ -10,6 +10,7 @@ public class ServiceVO {
     private String serviceName;
     private BigDecimal price;
     private BigDecimal avgStar;
+    private String unit;
     private String serviceArea;
     private String merchantName;
 

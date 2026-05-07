@@ -84,6 +84,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/v1/messages/stream").permitAll()
                         .requestMatchers("/api/v1/chat/**").permitAll()
                         .requestMatchers("/api/v1/orders/payNotify").permitAll()
+                        .requestMatchers("/api/v1/orders/payStatus/**").permitAll()
                         .requestMatchers("/ws/**").permitAll()
                         // 其他所有接口都需要登录
                         .anyRequest().authenticated()

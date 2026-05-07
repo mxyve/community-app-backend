@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 import top.xym.community.app.common.result.Result;
 import top.xym.community.app.mapper.UserMapper;
 import top.xym.community.app.model.dto.PageResponse;
@@ -152,6 +153,19 @@ public class ServiceOrderService {
                 .eq(ServiceOrder::getOrderNo, orderNo));
         if (order == null) return Result.error("订单不存在");
 
+        // 先查有没有支付单，有就直接返回，不重复创建
+        LambdaQueryWrapper<PayServiceOrder> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(PayServiceOrder::getOrderNo, orderNo);
+        PayServiceOrder oldPay = payServiceOrderMapper.selectOne(wrapper);
+        if (oldPay != null) {
+            // 已经支付 → 直接返回成功
+            if (oldPay.getPayStatus() == 1) {
+                return Result.success("已支付", "");
+            }
+            // 未支付 → 返回旧二维码
+            return Result.error("订单已创建支付，请直接扫码");
+        }
+
         try {
             PayServiceOrder pay = new PayServiceOrder();
             pay.setOrderNo(orderNo);
@@ -211,8 +225,43 @@ public class ServiceOrderService {
     }
 
     public Result getPayStatus(String orderNo) {
-        Integer status = payServiceOrderMapper.getPayStatus(orderNo);
+        // 查询列表
+        List<Integer> statusList = payServiceOrderMapper.getPayStatus(orderNo);
+
+        // 空 → 未支付
+        if (CollectionUtils.isEmpty(statusList)) {
+            return Result.success(false);
+        }
+
+        // 取第一条
+        Integer status = statusList.get(0);
         return Result.success(null, status != null && status == 1);
     }
 
+    /**
+     * 安全取消订单（仅待服务可取消）
+     */
+    public boolean cancelUserOrder(Long userId, String orderNo) {
+        // 根据订单号查询
+        ServiceOrder order = orderMapper.selectOne(
+                new LambdaQueryWrapper<ServiceOrder>()
+                        .eq(ServiceOrder::getOrderNo, orderNo)
+                        .eq(ServiceOrder::getDeleted, 0)
+        );
+
+        if (order == null || !order.getUserId().equals(userId)) {
+            return false;
+        }
+        // 只有待服务可取消
+        if (order.getStatus() != 1) {
+            return false;
+        }
+
+        // 已取消
+        order.setStatus(6);
+        order.setCancelReason("用户主动取消");
+        order.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+        return true;
+    }
 }

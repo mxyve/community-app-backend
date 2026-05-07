@@ -10,6 +10,7 @@ import top.xym.community.app.model.dto.PageResponse;
 import top.xym.community.app.module.service.model.dto.OrderPageRequest;
 import top.xym.community.app.module.service.model.entity.ServiceOrder;
 import top.xym.community.app.module.service.service.ServiceOrderService;
+import top.xym.community.app.utils.SecurityUtils;
 
 import java.util.Map;
 
@@ -71,4 +72,19 @@ public class ServiceOrderController {
     public Result<?> getPayStatus(@PathVariable String orderNo) {
         return orderService.getPayStatus(orderNo);
     }
+
+    @GetMapping("/cancel")
+    @Operation(summary = "取消订单（仅待服务可取消）")
+    public Result<String> cancelOrder(
+            @RequestParam String orderNo
+    ) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        boolean success = orderService.cancelUserOrder(userId, orderNo);
+        if (success) {
+            return Result.success("订单取消成功");
+        } else {
+            return Result.error("取消失败：订单不存在、非本人或非待服务状态");
+        }
+    }
+
 }
