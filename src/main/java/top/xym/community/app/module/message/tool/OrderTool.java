@@ -89,16 +89,22 @@ public class OrderTool {
     /**
      * 取消订单
      */
-    @Tool(description = "当用户要取消服务订单时，使用此工具；只能取消待服务而且是自己的订单；订单状态必须是1待服务; 请传入订单号 orderNo")
-    public String cancelOrder(Long userId, @ToolParam(description = "订单号") String orderNo) {
-        System.out.println("订单号 orderNo：" + orderNo);
+    @Tool(description = "取消并删除自己的订单，执行逻辑删除，传入订单编号 orderNo")
+    public String cancelOrder(Long userId, @ToolParam(description = "订单编号") String orderNo) {
+        System.out.println("订单ID orderId：" + orderNo);
         userId = SecurityUtils.getCurrentUserId();
         System.out.println("用户Id userId：" + userId);
-        boolean success = orderService.cancelUserOrder(userId, orderNo);
-        if (!success) {
-            return "很抱歉，订单不存在、非本人订单或仅【待服务】状态可取消";
+
+        // 1. 先查订单是否存在 & 是否是本人订单
+        ServiceOrder order = orderService.getOrderDetailByOrderNo(orderNo);
+        if (order == null || !order.getUserId().equals(userId)) {
+            return "订单不存在或无权取消";
         }
-        return "订单已成功取消";
+
+        // 2. 直接调用【逻辑删除方法】
+        orderService.deleteOrderByOrderNo(userId, orderNo);
+
+        return "订单已成功取消并删除";
     }
 
     /**

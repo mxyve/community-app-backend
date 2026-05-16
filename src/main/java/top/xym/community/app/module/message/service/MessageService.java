@@ -38,6 +38,7 @@ import top.xym.community.app.module.message.model.entity.ChatMessage;
 import top.xym.community.app.module.message.tool.CommunityKnowledgeTool;
 import top.xym.community.app.module.message.tool.CommunityServiceTool;
 
+import top.xym.community.app.module.message.tool.CommunityTool;
 import top.xym.community.app.module.message.tool.OrderTool;
 import top.xym.community.app.module.session.model.dto.SessionResponse;
 import top.xym.community.app.module.session.model.dto.SessionUpdateTitleRequest;
@@ -54,7 +55,6 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 import static io.micrometer.core.instrument.util.StringEscapeUtils.escapeJson;
@@ -76,13 +76,14 @@ public class MessageService {
     private final CommunityServiceTool communityServiceTool;
     private final CommunityKnowledgeTool communityKnowledgeTool;
     private final OrderTool orderTool;
+    private final CommunityTool communityTool;
 
     private ChatClient chatClient;
 
     @jakarta.annotation.PostConstruct
     public void init() {
         this.chatClient = ChatClient.builder(chatModel)
-                .defaultTools(communityServiceTool, communityKnowledgeTool, orderTool)
+                .defaultTools(communityServiceTool, communityKnowledgeTool, orderTool, communityTool)
                 .build();
     }
 
@@ -90,6 +91,9 @@ public class MessageService {
      * 发送消息（非流式，一次性返回）
      */
     public String sendMessageStream(MessageSendRequest request, Long userId) {
+
+        System.out.println("用户发送的消息 request" + request);
+
         // 语音输入识别
         if (request.getAudio() != null && !request.getAudio().isEmpty()) {
             byte[] audio = java.util.Base64.getDecoder().decode(request.getAudio());
@@ -105,6 +109,7 @@ public class MessageService {
 
             // AI提取用户输入的地址
             List<String> address = extractProvinceCityDistrict(request.getContent());
+            System.out.println("AI提取用户输入的地址 address: " + address);
             String province = address.get(0);
             String city = address.get(1);
             String district = address.get(2);
@@ -117,9 +122,59 @@ public class MessageService {
                 province = user.getProvince();
                 city = user.getCity();
                 district = user.getDistrict();
+                System.out.println("用户完全没给地址 → 用数据库的");
+                System.out.println("province" + province);
+                System.out.println("city" + city);
+                System.out.println("district" + district);
             }
 
             saveUserMessage(request, userId);
+
+            String content = request.getContent();
+            Integer parsedTagId = null;
+
+            if (content.contains("#失物招领")) parsedTagId = 1;
+            else if (content.contains("#邻里互助")) parsedTagId = 3;
+            else if (content.contains("#二手闲置")) parsedTagId = 6;
+            else if (content.contains("#房屋租赁")) parsedTagId = 7;
+            else if (content.contains("#生活碎片")) parsedTagId = 2;
+            else if (content.contains("#美食分享")) parsedTagId = 4;
+            else if (content.contains("#宠物日常")) parsedTagId = 5;
+            else if (content.contains("#绿植园艺")) parsedTagId = 8;
+
+            System.out.println("parsedTagId" + parsedTagId);
+
+            if (parsedTagId != null) {
+
+                // 先去掉 #标签
+                String rawText = content.replaceAll("#\\S+", "").trim();
+
+                // AI 提炼关键词
+                String keywordPrompt = """
+                                你是社区搜索助手，从用户的问题里，只提炼【最核心的物品/关键词】，
+                                只返回词语，不要句子，不要解释，不要多余字。
+                                用户问题：%s
+                        """.formatted(rawText);
+
+                // AI 提炼后的关键词
+                String searchKeyword = chatClient.prompt(keywordPrompt).call().content().trim();
+
+                System.out.println("AI 提炼后的关键词 社区帖子 searchKeyword: " + searchKeyword);
+
+                // 用关键词搜索（而不是整句话）
+                String fullText = communityTool.searchCommunityPosts(userId, searchKeyword, parsedTagId);
+
+                final ChatMessage assistantMessage = saveAssistantMessageTemp(request, userId);
+                updateAssistantMessageFullContent(assistantMessage.getId(), fullText, "completed", "");
+                updateSessionLastMessage(request.getSessionId(), fullText);
+                autoGenerateSessionTitle(request.getSessionId(), userId, fullText);
+
+                if (fullText.trim().startsWith("[")) {
+                    return fullText;
+                } else {
+                    return "{\"text\":\"" + escapeJson(fullText) + "\",\"audio\":\"\"}";
+                }
+            }
 
             // 普通对话 → 一次性返回 { text, audio }
             List<String> imageUrlList = new ArrayList<>();
@@ -220,7 +275,7 @@ public class MessageService {
 
         try {
             // 超级严格指令！！！
-            String prompt = """
+            String prompt = """ 
                         任务：从用户输入里提取【省、市、区】
                         规则【必须严格遵守，违反会导致严重错误】：
                         1. 用户没提到的，必须填空，不能自己编、不能自己猜、不能自己补！
@@ -231,6 +286,8 @@ public class MessageService {
                     """.formatted(userText);
 
             String result = chatClient.prompt(prompt).call().content().trim();
+
+            System.out.println("result" + result);
 
             if (result == null || result.isBlank()) {
                 return Arrays.asList(null, null, null);
@@ -245,6 +302,10 @@ public class MessageService {
             province = province.isEmpty() ? null : province;
             city = city.isEmpty() ? null : city;
             district = district.isEmpty() ? null : district;
+
+            System.out.println("province" + province);
+            System.out.println("city" + city);
+            System.out.println("district" + district);
 
             return Arrays.asList(province, city, district);
 
@@ -358,6 +419,10 @@ public class MessageService {
                        → 用自然语言回答
                     
                     5. 绝对不能把JSON改成文字，必须原样返回给前端渲染卡片
+                    
+                    6. 用户如果要找失物、求物品、问二手、找邻里帮助
+                       → 调用 CommunityTool 搜索邻里圈帖子
+                       → 直接返回帖子列表，不要自己回答
                     
                     用户地区：%s %s %s
                 """.formatted(province, city, district)));

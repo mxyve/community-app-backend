@@ -74,16 +74,32 @@ public class ServiceOrderController {
     }
 
     @GetMapping("/cancel")
-    @Operation(summary = "取消订单（仅待服务可取消）")
+    @Operation(summary = "用户申请取消订单 2、3→申请中）")
     public Result<String> cancelOrder(
-            @RequestParam String orderNo
+            @RequestParam String orderNo,
+            @RequestParam String cancelReason
     ) {
         Long userId = SecurityUtils.getCurrentUserId();
-        boolean success = orderService.cancelUserOrder(userId, orderNo);
+        boolean success = orderService.cancelUserOrder(userId, orderNo, cancelReason);
         if (success) {
-            return Result.success("订单取消成功");
+            return Result.success("申请取消成功");
         } else {
-            return Result.error("取消失败：订单不存在、非本人或非待服务状态");
+            return Result.error("操作失败：订单不存在/非本人/状态不允许取消");
+        }
+    }
+
+    @GetMapping("/applyRefund")
+    @Operation(summary = "申请退款（仅已完成订单）")
+    public Result<String> applyRefund(
+            @RequestParam String orderNo,
+            @RequestParam String refundReason
+    ) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        boolean success = orderService.applyRefund(userId, orderNo, refundReason);
+        if (success) {
+            return Result.success("退款申请已提交");
+        } else {
+            return Result.error("操作失败：订单不存在/非本人/非已完成状态");
         }
     }
 

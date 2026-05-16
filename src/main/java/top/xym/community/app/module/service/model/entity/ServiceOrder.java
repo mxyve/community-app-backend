@@ -77,6 +77,9 @@ public class ServiceOrder {
     @TableField("cancel_reason")
     private String cancelReason;
 
+    @TableField("refund_reason")
+    private String refundReason;
+
     @TableField("completed_at")
     private LocalDateTime completedAt;
 

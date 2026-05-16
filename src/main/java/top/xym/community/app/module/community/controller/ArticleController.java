@@ -36,7 +36,7 @@ public class ArticleController {
     }
 
     /**
-     * 删除文
+     * 删除文章
      */
     @DeleteMapping("/{articleId}")
     @Operation(summary = "删除文章")
@@ -116,4 +116,15 @@ public class ArticleController {
         return Result.success("查询成功", count);
     }
 
+    /**
+     * 智能体：搜索社区帖子（失物招领/邻里互助/二手闲置等）
+     */
+    @PostMapping("/ai/search")
+    @Operation(summary = "AI智能体搜索社区帖子（按关键词+标签+地区）")
+    public Result<PageResponse<Article>> searchPosts(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer tagId) {
+        PageResponse<Article> result = articleService.searchPosts(keyword, tagId);
+        return Result.success("搜索成功", result);
+    }
 }

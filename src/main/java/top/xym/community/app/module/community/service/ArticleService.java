@@ -360,4 +360,64 @@ public class ArticleService {
         return articleMapper.selectCount(wrapper);
     }
 
+    // 智能体 - 邻里圈搜索
+    public PageResponse<Article> searchPosts(String keyword, Integer tagId) {
+        Long userId = SecurityUtils.getCurrentUserId();
+        User user = myProfileMapper.selectById(userId);
+
+        LambdaQueryWrapper<Article> wrapper = new LambdaQueryWrapper<>();
+
+        // 地区匹配（同小区才显示）
+        if (user.getProvince() != null && !user.getProvince().isEmpty()) {
+            wrapper.eq(Article::getProvince, user.getProvince());
+        }
+        if (user.getCity() != null && !user.getCity().isEmpty()) {
+            wrapper.eq(Article::getCity, user.getCity());
+        }
+        if (user.getDistrict() != null && !user.getDistrict().isEmpty()) {
+            wrapper.eq(Article::getArea, user.getDistrict());
+        }
+
+        // 关键词搜索：标题 + 内容
+        if (keyword != null && !keyword.isBlank()) {
+            wrapper.and(w -> w.like(Article::getTitle, keyword)
+                    .or()
+                    .like(Article::getContent, keyword));
+        }
+
+        // 标签筛选（失物招领、二手、互助）
+        if (tagId != null) {
+            wrapper.eq(Article::getTagId, tagId);
+        }
+
+        wrapper.eq(Article::getDeleted, 0)
+                .eq(Article::getStatus, 1)
+                .orderByDesc(Article::getCreateTime);
+
+        Page<Article> page = new Page<>(1, 10);
+        Page<Article> resultPage = articleMapper.selectPage(page, wrapper);
+
+        // 封装标签、用户信息
+        for (Article article : resultPage.getRecords()) {
+            Tag tag = tagMapper.selectById(article.getTagId());
+            if (tag != null) {
+                article.setTagName(tag.getName());
+                article.setTagColor(tag.getColor());
+            }
+            User u = myProfileMapper.selectById(article.getUserId());
+            if (u != null) {
+                article.setNickName(u.getNickName());
+                article.setAvatar(u.getAvatar());
+            }
+        }
+
+        return new PageResponse<>(
+                resultPage.getCurrent(),
+                resultPage.getSize(),
+                resultPage.getTotal(),
+                resultPage.getPages(),
+                resultPage.getRecords()
+        );
+    }
+
 }

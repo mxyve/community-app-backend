@@ -37,4 +37,7 @@ public class Tag {
 
     @TableField("deleted")
     private Integer deleted;
+
+    @TableField("sort_order")
+    private Integer sortOrder ;
 }

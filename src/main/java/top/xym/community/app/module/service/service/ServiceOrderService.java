@@ -123,6 +123,15 @@ public class ServiceOrderService {
         return order;
     }
 
+    // 根据订单号查询订单详情
+    public ServiceOrder getOrderDetailByOrderNo(String orderNo) {
+        return orderMapper.selectOne(
+                new LambdaQueryWrapper<ServiceOrder>()
+                        .eq(ServiceOrder::getOrderNo, orderNo)
+                        .eq(ServiceOrder::getDeleted, 0)
+        );
+    }
+
     // 更新订单
     public void updateOrder(ServiceOrder order) {
         order.setUpdateTime(LocalDateTime.now());
@@ -136,6 +145,30 @@ public class ServiceOrderService {
         order.setDeleted(1);
         order.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(order);
+    }
+
+    /**
+     * 根据订单号逻辑删除订单
+     */
+    public boolean deleteOrderByOrderNo(Long userId, String orderNo) {
+        ServiceOrder order = orderMapper.selectOne(
+                new LambdaQueryWrapper<ServiceOrder>()
+                        .eq(ServiceOrder::getOrderNo, orderNo)
+                        .eq(ServiceOrder::getDeleted, 0)
+        );
+
+        // 订单不存在 或 不是本人订单
+        if (order == null || !order.getUserId().equals(userId)) {
+            return false;
+        }
+
+        // 执行逻辑删除
+        ServiceOrder updateOrder = new ServiceOrder();
+        updateOrder.setId(order.getId());
+        updateOrder.setDeleted(1);
+        updateOrder.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(updateOrder);
+        return true;
     }
 
     @Autowired
@@ -238,11 +271,42 @@ public class ServiceOrderService {
         return Result.success(null, status != null && status == 1);
     }
 
+// ***** 订单状态：1待服务2服务中3待付款4已完成5取消申请中6已取消7退款中8已退款 *****
+
     /**
      * 安全取消订单（仅待服务可取消）
      */
-    public boolean cancelUserOrder(Long userId, String orderNo) {
-        // 根据订单号查询
+    public boolean cancelUserOrder(Long userId, String orderNo, String cancelReason) {
+        ServiceOrder order = orderMapper.selectOne(
+                new LambdaQueryWrapper<ServiceOrder>()
+                        .eq(ServiceOrder::getOrderNo, orderNo)
+                        .eq(ServiceOrder::getDeleted, 0)
+        );
+
+        // 订单不存在 或 不是本人订单
+        if (order == null || !order.getUserId().equals(userId)) {
+            return false;
+        }
+
+        int status = order.getStatus();
+        // 只允许 2、3 申请取消
+        if (status != 2 && status != 3) {
+            return false;
+        }
+
+        // 设置为 取消申请中
+        order.setStatus(5);
+        order.setCancelReason(cancelReason);
+        order.setUpdateTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+        return true;
+    }
+
+    /**
+     * 申请退款（仅已完成订单）
+     * 4 → 7 退款中
+     */
+    public boolean applyRefund(Long userId, String orderNo, String refundReason) {
         ServiceOrder order = orderMapper.selectOne(
                 new LambdaQueryWrapper<ServiceOrder>()
                         .eq(ServiceOrder::getOrderNo, orderNo)
@@ -252,14 +316,14 @@ public class ServiceOrderService {
         if (order == null || !order.getUserId().equals(userId)) {
             return false;
         }
-        // 只有待服务可取消
-        if (order.getStatus() != 1) {
+
+        // 仅已完成可退款
+        if (order.getStatus() != 4) {
             return false;
         }
 
-        // 已取消
-        order.setStatus(6);
-        order.setCancelReason("用户主动取消");
+        order.setStatus(7);
+        order.setRefundReason(refundReason);
         order.setUpdateTime(LocalDateTime.now());
         orderMapper.updateById(order);
         return true;

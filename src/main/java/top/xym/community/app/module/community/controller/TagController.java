@@ -14,6 +14,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/community/tag")
 @RequiredArgsConstructor
+@io.swagger.v3.oas.annotations.tags.Tag(name = "标签接口")
 public class TagController {
 
     private final TagService tagService;
